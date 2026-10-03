@@ -29,8 +29,8 @@ adapter can read any other.
     │   └── honba_<broker>/
     │       ├── __init__.py
     │       ├── config.py           # Pydantic config model
-    │       ├── data.py             # DataClient implementation
-    │       ├── execution.py        # ExecutionClient implementation
+    │       ├── data.py             # MarketDataAdapter methods
+    │       ├── execution.py        # ExecutionAdapter methods
     │       ├── instruments.py      # InstrumentProvider
     │       ├── websocket.py        # WebSocket connection
     │       ├── http.py             # REST client wrapper
@@ -208,206 +208,449 @@ The reconnect loop is mandatory. Indian broker WebSockets drop
 regularly; an adapter without reconnection logic is unusable for live
 trading.
 
-## Step 5: Implement the Data Client
+## Step 5: Implement the Market Data Methods
 
-`data.py`:
+`data.py`. The role is a `runtime_checkable` Protocol, so this class
+implements it structurally — it inherits nothing but the shared base:
 
-    from honba.adapters.base import DataClient
-    from honba.entities import Instrument
-    from honba.messages import Bar, BarType, QuoteTick
+    from datetime import datetime
+
+    from honba.adapters.capabilities import Capability
+    from honba.adapters.errors import AdapterError
+    from honba.adapters.models import (
+        MarketDepth,
+        StreamCallback,
+        StreamMode,
+        Subscription,
+    )
+    from honba.domain.bar import Bar
+    from honba.domain.instrument import Instrument, InstrumentId
+    from honba.domain.tick import QuoteTick
+
+    from .http import MyBrokerHTTP
+    from .websocket import MyBrokerWebSocket
+    from .parsing import (
+        parse_instrument,
+        parse_quote,
+        parse_depth,
+        parse_bars,
+        to_broker_interval,
+    )
+
+
+    class MyBrokerMarketData:
+        """The MarketDataAdapter half of the adapter."""
+
+        def __init__(self, http: MyBrokerHTTP, ws: MyBrokerWebSocket):
+            self.http = http
+            self.ws = ws
+            self._subscriptions: set[str] = set()
+
+        async def instruments(self) -> list[Instrument]:
+            self.require_connected()
+            self.require_capabilities(Capability.INSTRUMENT_MASTER)
+            data = await self.http.get("/instruments")
+            return [parse_instrument(row) for row in data["instruments"]]
+
+        async def search_instruments(self, query: str) -> list[Instrument]:
+            self.require_connected()
+            needle = query.lower()
+            return [
+                instrument
+                for instrument in await self.instruments()
+                if needle in instrument.instrument_id.symbol.lower()
+            ]
+
+        async def quote(self, instrument_id: InstrumentId) -> QuoteTick:
+            self.require_connected()
+            self.require_capabilities(Capability.QUOTES)
+            data = await self.http.get(f"/quote/{instrument_id.symbol}")
+            return parse_quote(data, instrument_id)
+
+        async def depth(self, instrument_id: InstrumentId, levels: int = 5) -> MarketDepth:
+            self.require_connected()
+            self.require_capabilities(Capability.DEPTH)
+            data = await self.http.get(f"/depth/{instrument_id.symbol}", levels=levels)
+            return parse_depth(data, instrument_id)
+
+        async def historical_bars(
+            self,
+            instrument_id: InstrumentId,
+            *,
+            timeframe: str,
+            start: datetime,
+            end: datetime,
+        ) -> list[Bar]:
+            self.require_connected()
+            self.require_capabilities(Capability.HISTORICAL_BARS)
+            data = await self.http.get(
+                "/historical",
+                symbol=instrument_id.symbol,
+                interval=to_broker_interval(timeframe),
+                from_ts=start.timestamp(),
+                to_ts=end.timestamp(),
+            )
+            return parse_bars(data, instrument_id, timeframe)
+
+        async def subscribe(
+            self,
+            instruments: tuple[InstrumentId, ...],
+            *,
+            mode: StreamMode,
+            callback: StreamCallback,
+        ) -> Subscription:
+            self.require_connected()
+            # subscribe needs no Capability: the mode is the argument, so it
+            # is checked against stream_modes instead.
+            self.capabilities().require_stream_mode(mode)
+            handle = await self.ws.subscribe(
+                tuple(instruments), mode, callback
+            )
+            self._subscriptions.add(handle)
+            return Subscription(
+                id=handle, instruments=tuple(instruments), mode=mode
+            )
+
+        async def unsubscribe(self, subscription_id: str) -> None:
+            self.require_connected()
+            if subscription_id not in self._subscriptions:
+                raise AdapterError(
+                    f"unknown subscription {subscription_id!r}"
+                )
+            self._subscriptions.discard(subscription_id)
+            await self.ws.unsubscribe(subscription_id)
+
+`timeframe` is the canonical aggregation name (`"1m"`, `"1d"`); translate it
+to the broker's code in `parsing.py` or `constants.py`, never in the engine.
+An unknown instrument id is an `AdapterError`, not a `KeyError`.
+
+## Step 6: Implement the Execution Methods
+
+`execution.py`, against the `ExecutionAdapter` Protocol:
+
+    from honba.adapters.capabilities import Capability
+    from honba.adapters.errors import AdapterError
+    from honba.adapters.models import (
+        Funds,
+        Holding,
+        MarginReport,
+        OrderReport,
+        Product,
+    )
+    from honba.domain.instrument import InstrumentId
+    from honba.domain.order import OrderIntent
+    from honba.domain.position import Position
+    from honba.domain.trade import Trade
+
+    from .http import MyBrokerHTTP
+    from .parsing import (
+        parse_order_report,
+        parse_position,
+        parse_holding,
+        parse_trade,
+        parse_funds,
+        parse_margin,
+        to_broker_product,
+    )
+
+
+    class MyBrokerExecution:
+        """The ExecutionAdapter half of the adapter."""
+
+        def __init__(self, http: MyBrokerHTTP):
+            self.http = http
+
+        async def place_order(
+            self,
+            intent: OrderIntent,
+            *,
+            product: Product,
+            client_order_id: str | None = None,
+        ) -> OrderReport:
+            self.require_connected()
+            self.require_capabilities(Capability.PLACE_ORDER)
+            # Refuse what we cannot express before spending a request.
+            caps = self.capabilities()
+            caps.require_product(product)
+            caps.require_order_type(intent.order_type)
+            caps.require_time_in_force(intent.time_in_force)
+            payload = {
+                "symbol": intent.instrument_id.symbol,
+                "side": intent.side.value.upper(),
+                "quantity": intent.quantity,
+                "order_type": intent.order_type.value.upper(),
+                "price": intent.price,
+                "client_order_id": client_order_id,
+            }
+            resp = await self.http.post("/orders", json=payload)
+            # parse_order_report maps the broker's rejection code onto
+            # status=REJECTED with a reject_reason, so a refusal is data here,
+            # not an exception.
+            return parse_order_report(resp, client_order_id=client_order_id)
+
+        async def modify_order(
+            self,
+            order_id: str,
+            *,
+            quantity: float | None = None,
+            price: float | None = None,
+            trigger_price: float | None = None,
+        ) -> None:
+            self.require_connected()
+            self.require_capabilities(Capability.MODIFY_ORDER)
+            if quantity is None and price is None and trigger_price is None:
+                raise AdapterError("modify_order() needs a field to change")
+            await self.http.post(f"/orders/{order_id}/modify", json={
+                "quantity": quantity,
+                "price": price,
+                "trigger_price": trigger_price,
+            })
+
+        async def cancel_order(self, order_id: str) -> None:
+            self.require_connected()
+            self.require_capabilities(Capability.CANCEL_ORDER)
+            await self.http.post(f"/orders/{order_id}/cancel", json={})
+
+        async def cancel_all(
+            self,
+            *,
+            instrument_id: InstrumentId | None = None,
+            product: Product | None = None,
+        ) -> None:
+            self.require_connected()
+            self.require_capabilities(Capability.CANCEL_ALL)
+            await self.http.post("/orders/cancel-all", json={
+                "symbol": instrument_id.symbol if instrument_id else None,
+                "product": to_broker_product(product) if product else None,
+            })
+
+        async def order_status(self, order_id: str) -> OrderReport:
+            self.require_connected()
+            self.require_capabilities(Capability.ORDER_BOOK)
+            resp = await self.http.get(f"/orders/{order_id}")
+            return parse_order_report(resp)
+
+        async def orders(self) -> list[OrderReport]:
+            self.require_connected()
+            self.require_capabilities(Capability.ORDER_BOOK)
+            resp = await self.http.get("/orders")
+            return [parse_order_report(o) for o in resp["orders"]]
+
+        async def trades(self) -> list[Trade]:
+            self.require_connected()
+            self.require_capabilities(Capability.TRADE_BOOK)
+            resp = await self.http.get("/trades")
+            return [parse_trade(t) for t in resp["trades"]]
+
+        async def positions(self) -> list[Position]:
+            self.require_connected()
+            self.require_capabilities(Capability.POSITIONS)
+            resp = await self.http.get("/positions")
+            return [parse_position(p) for p in resp["positions"]]
+
+        async def holdings(self) -> list[Holding]:
+            self.require_connected()
+            self.require_capabilities(Capability.HOLDINGS)
+            resp = await self.http.get("/holdings")
+            return [parse_holding(h) for h in resp["holdings"]]
+
+        async def funds(self) -> Funds:
+            self.require_connected()
+            self.require_capabilities(Capability.FUNDS)
+            return parse_funds(await self.http.get("/funds"))
+
+        async def margin(
+            self, instrument_id: InstrumentId | None = None
+        ) -> MarginReport:
+            self.require_connected()
+            self.require_capabilities(Capability.MARGIN)
+            resp = await self.http.get(
+                "/margin", symbol=instrument_id.symbol if instrument_id else None
+            )
+            return parse_margin(resp, instrument_id)
+
+Two rules carry most of the weight here:
+
+- **Unsupported is an exception.** A capability, product, order type or time
+  in force the adapter does not declare raises `CapabilityError` before the
+  request is sent. That is a configuration bug, so it must be loud.
+- **Refusal is not an exception.** When the *broker* refuses an order, return
+  an `OrderReport` with `status=REJECTED` and a `reject_reason`. The engine
+  journals and reconciles that; raising would lose the refusal.
+
+`client_order_id` is the caller's idempotency key — store it and return the
+same order for a repeat instead of creating a second one.
+
+Compose the two halves with the facade in `__init__.py`, and the single
+object satisfies all three declarations:
+
+    from honba.adapters.base import Adapter
+    from honba.adapters.capabilities import AdapterCapabilities, Capability
+    from honba.adapters.models import RunMode, SessionInfo
 
     from .config import MyBrokerConfig
     from .http import MyBrokerHTTP
     from .websocket import MyBrokerWebSocket
-    from .parsing import parse_quote, parse_bars
+    from .data import MyBrokerMarketData
+    from .execution import MyBrokerExecution
 
 
-    class MyBrokerDataClient(DataClient):
+    class MyBrokerAdapter(Adapter, MyBrokerMarketData, MyBrokerExecution):
+        name = "mybroker"
+
         def __init__(self, config: MyBrokerConfig):
             self.config = config
             self.http = MyBrokerHTTP(config)
             self.ws = MyBrokerWebSocket(config)
-            self._quote_cb = None
+            MyBrokerMarketData.__init__(self, self.http, self.ws)
+            MyBrokerExecution.__init__(self, self.http)
+            self._connected = False
+            self._caps = AdapterCapabilities(
+                name="mybroker",
+                venues=frozenset({"NSE"}),
+                features=frozenset({Capability.QUOTES, Capability.ORDER_BOOK}),
+            )
 
-        async def connect(self) -> None:
+        def capabilities(self) -> AdapterCapabilities:
+            return self._caps
+
+        async def connect(self) -> SessionInfo:
             await self.http.authenticate()
             await self.ws.connect()
-            self.ws.on("quote", self._on_quote_message)
+            self._connected = True
+            return SessionInfo(user_id=self.config.client_id, mode=RunMode.LIVE)
 
         async def disconnect(self) -> None:
             await self.ws.close()
             await self.http.close()
+            self._connected = False
 
-        async def subscribe_quotes(self, instruments: list[Instrument]) -> None:
-            symbols = [i.symbol for i in instruments]
-            await self.ws.subscribe(symbols)
+        def is_connected(self) -> bool:
+            return self._connected
 
-        async def request_instruments(self) -> list[Instrument]:
-            data = await self.http.get("/instruments")
-            return [parse_instrument(row) for row in data["instruments"]]
+        async def session(self) -> SessionInfo:
+            self.require_connected()
+            return SessionInfo(user_id=self.config.client_id, mode=RunMode.LIVE)
 
-        async def request_historical_bars(
-            self, instrument: Instrument, bar_type: BarType,
-            start, end,
-        ) -> list[Bar]:
-            data = await self.http.get(
-                "/historical",
-                symbol=instrument.symbol,
-                interval=bar_type.to_broker_interval(),
-                from_ts=start.timestamp(),
-                to_ts=end.timestamp(),
-            )
-            return parse_bars(data, instrument, bar_type)
-
-        def set_quote_callback(self, cb) -> None:
-            self._quote_cb = cb
-
-        def _on_quote_message(self, message: dict) -> None:
-            quote = parse_quote(message)
-            if self._quote_cb:
-                self._quote_cb(quote)
-
-## Step 6: Implement the Execution Client
-
-`execution.py`:
-
-    from honba.adapters.base import ExecutionClient
-    from honba.entities import Order, Position
-    from honba.messages import OrderStatusReport
-
-    from .config import MyBrokerConfig
-    from .http import MyBrokerHTTP
-    from .parsing import parse_order_response
-
-
-    class MyBrokerExecutionClient(ExecutionClient):
-        def __init__(self, config: MyBrokerConfig):
-            self.config = config
-            self.http = MyBrokerHTTP(config)
-
-        async def connect(self) -> None:
-            await self.http.authenticate()
-
-        async def disconnect(self) -> None:
-            await self.http.close()
-
-        async def submit_order(self, order: Order) -> str:
-            payload = {
-                "symbol": order.instrument.symbol,
-                "side": order.side.value.upper(),
-                "quantity": order.quantity,
-                "order_type": order.order_type.value.upper(),
-                "price": str(order.price) if order.price else None,
-                "client_order_id": order.client_order_id,
-            }
-            resp = await self.http.post("/orders", json=payload)
-            return parse_order_response(resp).broker_order_id
-
-        async def cancel_order(self, client_order_id: str) -> None:
-            await self.http.post(f"/orders/{client_order_id}/cancel", json={})
-
-        async def modify_order(self, order: Order) -> None:
-            payload = {
-                "quantity": order.quantity,
-                "price": str(order.price) if order.price else None,
-            }
-            await self.http.post(f"/orders/{order.client_order_id}/modify", json=payload)
-
-        async def query_order(self, client_order_id: str) -> OrderStatusReport:
-            resp = await self.http.get(f"/orders/{client_order_id}")
-            return parse_order_response(resp)
-
-        async def query_positions(self) -> list[Position]:
-            resp = await self.http.get("/positions")
-            return [parse_position(p) for p in resp["positions"]]
+The two roles are Protocols, so there is nothing to register or inherit for
+them: `isinstance(MyBrokerAdapter(config), MarketDataAdapter)` and
+`isinstance(..., ExecutionAdapter)` are simply `True` because the methods
+exist.
 
 ## Step 7: Parsing
 
-`parsing.py` is where broker-specific JSON becomes Honba types. This
-is where most bugs live, so keep it small and test it thoroughly:
+`parsing.py` is where broker-specific JSON becomes the canonical types from
+`honba.adapters.models` and `honba.domain`. This is where most bugs live, so
+keep it small and test it thoroughly:
 
-    from decimal import Decimal
+    from honba.domain.bar import Bar
+    from honba.domain.instrument import Instrument, InstrumentId
+    from honba.domain.tick import QuoteTick
 
-    from honba.entities import Instrument, InstrumentId
-    from honba.messages import Bar, BarType, QuoteTick, UnixNanos
+    from .constants import MILLIS_TO_NANOS
+    from .errors import ParseError
 
 
-    def parse_quote(raw: dict) -> QuoteTick:
+    def parse_quote(raw: dict, instrument_id: InstrumentId) -> QuoteTick:
         return QuoteTick(
-            instrument=InstrumentId(symbol=raw["symbol"], venue="NSE"),
-            bid=Decimal(str(raw["bid"])),
-            ask=Decimal(str(raw["ask"])),
-            bid_size=int(raw.get("bid_qty", 0)),
-            ask_size=int(raw.get("ask_qty", 0)),
-            timestamp=UnixNanos.from_millis(raw["timestamp_ms"]),
+            instrument_id=instrument_id,
+            ts=raw["timestamp_ms"] * MILLIS_TO_NANOS,
+            bid_price=float(raw["bid"]),
+            ask_price=float(raw["ask"]),
+            bid_size=float(raw.get("bid_qty", 0.0)),
+            ask_size=float(raw.get("ask_qty", 0.0)),
         )
 
 
-    def parse_bars(raw: list[dict], instrument: Instrument, bar_type: BarType) -> list[Bar]:
+    def parse_bars(
+        raw: list[dict], instrument_id: InstrumentId, timeframe: str
+    ) -> list[Bar]:
         return [
             Bar(
-                instrument=instrument.id,
-                bar_type=bar_type,
-                open=Decimal(str(row["open"])),
-                high=Decimal(str(row["high"])),
-                low=Decimal(str(row["low"])),
-                close=Decimal(str(row["close"])),
-                volume=int(row["volume"]),
-                timestamp=UnixNanos.from_millis(row["timestamp_ms"]),
+                instrument_id=instrument_id,
+                ts=row["timestamp_ms"] * MILLIS_TO_NANOS,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=float(row["volume"]),
             )
             for row in raw
         ]
 
 Three rules for parsing code:
 
-1. **Always use `Decimal` for prices.** Broker JSON often uses
-   floats; converting through `float` loses precision. Parse as string,
-   then Decimal.
-2. **Always validate.** If a required field is missing, raise a
-   descriptive error, do not return a partially-populated object.
-3. **Always test.** Every parsing function gets a test with a real
-   broker fixture.
+1. **Emit the canonical types exactly.** Prices and quantities are `float`
+   and timestamps are unix nanoseconds, because that is what the domain uses;
+   the money-representation decision is tracked in the core. Field names
+   must match (`bid_price`, not `bid`; `instrument_id`, not `instrument`).
+2. **Always validate.** If a required field is missing, raise a descriptive
+   error, do not return a partially-populated object.
+3. **Always test.** Every parsing function gets a test with a real broker
+   fixture.
 
 ## Step 8: Tests
 
 `tests/test_parsing.py`:
 
-    import json
-    from decimal import Decimal
-    from pathlib import Path
-
     import pytest
 
+    from honba.domain.instrument import InstrumentId
+    from honba_mybroker.errors import ParseError
     from honba_mybroker.parsing import parse_quote
 
-
-    FIXTURES = Path(__file__).parent / "fixtures"
-
-
-    def load(name: str) -> dict:
-        return json.loads((FIXTURES / name).read_text())
+    from honba_adapters_shared.fixtures import load_fixture
 
 
     def test_parse_quote():
-        raw = load("quote_reliance.json")
-        quote = parse_quote(raw)
-        assert quote.instrument.symbol == "RELIANCE"
-        assert quote.instrument.venue == "NSE"
-        assert quote.bid == Decimal("2450.50")
-        assert quote.ask == Decimal("2450.75")
+        raw = load_fixture("quote_reliance.json")
+        quote = parse_quote(raw, InstrumentId("RELIANCE", "NSE"))
+        assert quote.instrument_id.symbol == "RELIANCE"
+        assert quote.bid_price == 2450.50
+        assert quote.ask_price == 2450.75
 
 
     def test_parse_quote_missing_bid_raises():
-        raw = load("quote_missing_bid.json")
-        with pytest.raises(KeyError):
-            parse_quote(raw)
+        raw = load_fixture("quote_missing_bid.json")
+        with pytest.raises(ParseError):
+            parse_quote(raw, InstrumentId("RELIANCE", "NSE"))
 
 The fixtures directory contains recorded broker responses. Save them
 from your own API calls or from the broker's documentation examples.
 
+Then run the shared contract suite, which is the check that actually makes
+the adapter an adapter:
+
+    from honba.adapters.contract import verify_adapter_contract
+
+    from honba_mybroker import MyBrokerAdapter
+    from honba_mybroker.config import MyBrokerConfig
+
+
+    @pytest.mark.asyncio
+    async def test_mybroker_satisfies_the_contract():
+        await verify_adapter_contract(MyBrokerAdapter(MyBrokerConfig.paper()))
+
+It is deterministic and pytest-free (it raises `ContractViolation` on the
+first broken rule), and it leaves the adapter disconnected when it finishes.
+The contract suite deliberately leaves stream delivery, reconnect and
+data-gap markers to their own story, so cover those in the adapter's tests.
+
 ## Step 9: Registration
 
-In `honba_adapters_shared/registry.py`, add an entry:
+The registry lives in the core, in `honba.adapters.registry`. An installed
+package advertises itself through the `honba.adapters` entry-point group in
+its own `pyproject.toml`:
+
+    [project.entry-points."honba.adapters"]
+    mybroker = "honba_mybroker:MyBrokerAdapter"
+
+Discovery is lazy, so importing `honba` never touches installed
+distributions, and explicit registration always wins — a config file or a
+test can override an installed adapter without uninstalling it. For a local
+run without an install, register the factory directly:
+
+    from honba.adapters.registry import register_adapter
 
     from honba_mybroker import MyBrokerAdapter
 
@@ -465,10 +708,12 @@ paper trading without issues:
 
 ## Common Mistakes
 
-### Using `float` for prices
+### Inventing your own price type
 
-Broker prices must be parsed as `Decimal`. Using `float` produces
-sub-paisa errors that compound across thousands of trades.
+The canonical types use `float` for prices and quantities and unix-nanosecond
+integers for timestamps. Do not introduce `Decimal` or a wrapper type at the
+boundary: the domain validates these values on construction, and a mismatch
+fails the contract suite.
 
 ### Blocking the event loop
 
@@ -483,14 +728,22 @@ dangling WebSocket.
 
 ### Not handling broker-side rate limits
 
-Indian brokers rate-limit aggressively. Use the token-bucket helper in
-`honba_adapters_shared/rate_limit.py`.
+Indian brokers rate-limit aggressively. The token-bucket helper is shared
+plumbing owned by the core (`honba.adapters` shared helpers, E1-S5), so it
+is not per-adapter code — do not reimplement it in your package.
 
 ### Assuming the order ID is stable
 
 Most brokers return a broker-assigned order ID that differs from your
-`client_order_id`. Preserve both. The engine tracks orders by
-`client_order_id`; the broker sees its own.
+`client_order_id`. Preserve both. `client_order_id` is the caller's
+idempotency key: a repeat with the same id must not create a second order.
+
+### Raising on a rejected order
+
+A broker refusal is an `OrderReport` with `status=REJECTED` and a
+`reject_reason`, not an exception. Only `CapabilityError` (something the
+adapter does not declare) and `AdapterError` (unknown id, transport failure)
+are raised.
 
 ### Testing only the happy path
 
@@ -506,12 +759,19 @@ Before opening a pull request:
 - [ ] `config.py` with Pydantic model and `SecretStr` for tokens
 - [ ] `http.py` with retry logic for transient failures
 - [ ] `websocket.py` with reconnection
-- [ ] `data.py` implementing `DataClient`
-- [ ] `execution.py` implementing `ExecutionClient`
-- [ ] `parsing.py` using `Decimal` for prices
+- [ ] `data.py` implementing `instruments`, `search_instruments`, `quote`,
+      `depth`, `historical_bars`, `subscribe`, `unsubscribe`
+- [ ] `execution.py` implementing `place_order`, `modify_order`,
+      `cancel_order`, `cancel_all`, `order_status`, `orders`, `trades`,
+      `positions`, `holdings`, `funds`, `margin`
+- [ ] Facade: `capabilities()`, `connect()`, `disconnect()`, `is_connected()`,
+      `session()`
+- [ ] `parsing.py` emitting the canonical field names (`float` prices,
+      unix-nanosecond timestamps)
 - [ ] Fixtures recorded for all message types
+- [ ] `await verify_adapter_contract(MyBrokerAdapter(config))` passes
 - [ ] Tests for parsing, data, execution, and error paths
-- [ ] Registered in `honba_adapters_shared/registry.py`
+- [ ] Entry point declared under `[project.entry-points."honba.adapters"]`
 - [ ] Added to CI workflow
 - [ ] README with installation, configuration, and example
 - [ ] All tests pass

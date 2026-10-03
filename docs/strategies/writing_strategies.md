@@ -10,9 +10,9 @@ determines which mode it is in.
 
 ## The Minimal Strategy
 
-    from honba.strategies.base import Strategy
+    from honba.domain import Bar
     from honba.entities import Instrument
-    from honba.messages import Bar
+    from honba.strategies.base import Strategy
 
 
     class BuyAndHold(Strategy):

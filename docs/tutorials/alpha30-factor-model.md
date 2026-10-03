@@ -49,10 +49,10 @@ index inclusion event.
 
 Create `alpha30_momentum.py`:
 
+    from honba.domain import Bar
+    from honba.india.universes import Alpha30
     from honba.strategies.base import Strategy
     from honba.strategies.portfolio import EqualWeight
-    from honba.india.universes import Alpha30
-    from honba.messages import Bar
 
 
     class Alpha30Momentum(Strategy):

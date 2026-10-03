@@ -1,8 +1,9 @@
 # Broker Adapters
 
 Honba connects to Indian brokers through adapters. Each adapter
-implements the same two interfaces (`DataClient`, `ExecutionClient`) but
-the underlying broker APIs differ in authentication, symbol format,
+implements the same contract — the `Adapter` facade plus the
+`MarketDataAdapter` and `ExecutionAdapter` role protocols — but the
+underlying broker APIs differ in authentication, symbol format,
 data granularity, rate limits, and regulatory constraints.
 
 This document summarises the practical differences.
@@ -37,8 +38,8 @@ in India.
 
 For a research-first platform like Honba, this means: **do backtesting
 and paper trading with any adapter, but only go live after registering a
-static IP with your broker**. The paper adapter (`honba-paper`)
-simulates execution locally and does not require a static IP.
+static IP with your broker**. The Sandbox adapter, which simulates
+execution locally over real market data, does not require a static IP.
 
 ## Authentication Differences
 
@@ -57,9 +58,9 @@ of adapter bugs:
 - **Upstox:** OAuth with a daily browser login and no headless
   refresh — this is Upstox's main limitation for automated systems.
 
-Honba's adapter base class abstracts the auth flow behind a single
-`authenticate()` coroutine, but the token refresh interval is
-broker-specific and configured per adapter.
+Honba's adapter facade abstracts the auth flow behind a single
+`connect()` coroutine returning a `SessionInfo`, but the token refresh
+interval is broker-specific and configured per adapter.
 
 ## Data Granularity
 
@@ -139,32 +140,29 @@ each adapter expects.
 
 ## Paper vs Live
 
-The paper adapter (`honba-paper`) is the recommended way to validate a
-strategy before going live:
-
-    [adapter]
-    name = "paper"
-    data_source = "dhan"          # use Dhan for real market data
-    cost_model = "india_equity_delivery"
-    latency_ms = 100
+Paper trading is the **Sandbox adapter** (E3-S7). It implements the same
+adapter contract over the real simulator, so a strategy cannot tell paper
+from live, and it is the recommended way to validate a strategy before
+going live. Configure it like any other adapter, by name under `[adapter]`,
+with market data coming from a broker adapter and fills simulated locally.
 
 Paper trading uses real market data but simulates fills locally. This
-is identical to the Tier 2 backtest simulator, so a strategy that
+is identical to the event-driven backtest simulator, so a strategy that
 performs as expected in backtest will perform as expected in paper.
 The only difference between paper and live is the fill quality.
 
 ## Rate Limits
 
-All Indian broker APIs impose rate limits. Honba's adapters implement
-token-bucket rate limiting internally, but the limits differ:
+All Indian broker APIs impose rate limits. The limits differ:
 
 - Zerodha: 3 requests/second for order placement, 10/second for market
   data (varies by plan).
 - Dhan: 25 requests/second.
 - Angel One: 3 requests/second for historical data.
 
-Adapters expose their limits via `adapter.rate_limits()` so strategies
-can throttle accordingly.
+Rate limiting is shared plumbing owned by the core rather than per-adapter
+code. The adapter contract publishes no rate-limit accessor today (E1-S5),
+so an adapter throttles its own transport until it does.
 
 ## Adding a New Broker
 
@@ -173,9 +171,10 @@ If your broker is not in the list above:
 1. Create a new directory in `honba-adapters/` following the uniform
    structure (`config.py`, `data.py`, `execution.py`, `instruments.py`,
    `websocket.py`, `http.py`, `parsing.py`).
-2. Implement `DataClient` and `ExecutionClient`.
-3. Add fixtures and tests.
-4. Register in `honba_adapters_shared/registry.py`.
+2. Implement the `Adapter` facade plus the `MarketDataAdapter` and
+   `ExecutionAdapter` role protocols.
+3. Add fixtures and tests, including the shared contract suite.
+4. Advertise the package through the `honba.adapters` entry-point group.
 
 The adapter interface is documented in
 [Adapter Interface](../architecture/adapter_interface.md).
