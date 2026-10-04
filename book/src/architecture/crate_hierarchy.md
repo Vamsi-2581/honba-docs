@@ -90,7 +90,7 @@ Trading domain models. `Instrument`, `Position`, `Portfolio`, `Order`,
     ├── portfolio/
     ├── order/
     ├── trade/
-    └── identifiers/        — Symbol, ISIN, Venue (Nse, Bse)
+    └── identifiers/        — Symbol, ISIN, Exchange (Nse, Bse)
 
 **Rule:** `honba-entities` never imports from `honba-algo`. An `Instrument`
 does not know how to be traded; it only knows what it is.

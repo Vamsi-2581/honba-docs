@@ -124,7 +124,7 @@ can refuse an unsupported request with a typed `CapabilityError` instead of
 discovering it as an `AttributeError` or, worse, a failed HTTP call.
 
 `AdapterCapabilities` carries the adapter `name` plus seven non-empty sets:
-`venues`, `products`, `order_types`, `time_in_force`, `price_types`,
+`exchanges`, `products`, `order_types`, `time_in_force`, `price_types`,
 `stream_modes` and `features`. `supports()` and `require()` answer for
 `features`; the same pair exists per dimension (`supports_product` /
 `require_product`, `supports_order_type`, `supports_time_in_force`,
@@ -239,7 +239,7 @@ Here is a skeleton for a hypothetical broker:
             self.config = config
             self.http = DhanHTTP(config)
             self.ws = DhanWebSocket(config)
-            self._caps = AdapterCapabilities(name="dhan", venues=frozenset({"NSE"}))
+            self._caps = AdapterCapabilities(name="dhan", exchanges=frozenset({"NSE"}))
 
         def capabilities(self) -> AdapterCapabilities:
             return self._caps

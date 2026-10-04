@@ -507,7 +507,7 @@ object satisfies all three declarations:
             self._connected = False
             self._caps = AdapterCapabilities(
                 name="mybroker",
-                venues=frozenset({"NSE"}),
+                exchanges=frozenset({"NSE"}),
                 features=frozenset({Capability.QUOTES, Capability.ORDER_BOOK}),
             )
 
