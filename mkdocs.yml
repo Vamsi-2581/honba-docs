@@ -81,12 +81,16 @@ nav:
   - API:
       - Python: api/python/index.md
       - Python SDK (client): api/python-sdk.md
+      - Adapters (typed registry): api/adapters.md
       - REST API and serve: api/rest.md
   - Internals (mdBook): https://honba-labs.github.io/honba/book/
   - Architecture:
+      - architecture/index.md
       - Overview: architecture/overview.md
       - Adapter Interface: architecture/adapter_interface.md
       - Money and Currency: architecture/money.md
       - Order Reject and Cancel: architecture/order_reject_cancel.md
       - WASM Indicators: architecture/wasm_indicators.md
+      - Runtime (event loop): architecture/event_loop.md
+      - Contracts from Rust: architecture/contracts_from_rust.md
 
