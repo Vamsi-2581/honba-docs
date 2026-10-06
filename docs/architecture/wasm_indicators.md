@@ -44,13 +44,33 @@ A failure throws a JS `Error` with a message; the call never returns infinity. I
   OHLC-only name like `atr` passed to `indicator_series`);
 - `period` (or `fast`/`slow`/`signal`) of 0, above 1,000,000, fractional, or missing where
   required; bad `output`; unknown param fields;
-- any `NaN` or infinite input value;
+- any `NaN` or infinite input value (the message names the first bad index, for example
+  `non-finite input at index 2`);
 - `ohlc_indicator_series`: the `high`, `low`, and `close` arrays having different lengths;
+- `ohlc_indicator_series`: `high` below `low` at any index (`IndicatorError::InvertedRange`), with
+  the message `high is below low at index N` where `N` is the first such bar. `high == low` is
+  valid (a flat bar);
 - finite input whose result overflows `f64` (non-finite output, for example an SMA of values
   near `1e308`).
 
 Empty input returns an empty array. Params are validated before the data, so a bad request fails
-the same way on any input.
+the same way on any input. `ohlc_indicator_series` then checks, in order: equal lengths, finite
+values, and `high >= low`; so a non-finite value is reported before an inverted range.
+
+## Edge cases
+
+Pinned by `crates/honba-api-wasm/src/tests/edge_cases.rs`:
+
+- **Flat series** (all values equal): never overflows or returns infinity. `sma`, `ema` and
+  `bollinger` bands equal the constant, the `macd` histogram is `0`, and `atr` is `0`. RSI stays
+  within `0..=100`.
+- **`period` 1** is accepted by every period indicator; `sma` and `ema` with `period: 1` return
+  the input unchanged.
+- **Input shorter than the warm-up is not an error**: the result is all `NaN`, still one value per
+  input (for example two closes with `period: 3`).
+- **Length equal to `period`** gives exactly one value, at the end, for `sma`, `ema`, `bollinger`
+  and `atr` (a 3-bar `atr` with `period: 3` yields one value). `rsi` needs `period + 1` closes
+  (it needs `period` changes), so with `period` closes it is all `NaN`.
 
 ## Examples
 
@@ -87,6 +107,14 @@ try {
   wasm.ohlc_indicator_series("atr", '{"period":3}', high, low.slice(0, 5), close);
 } catch (e) {
   console.error(e.message); // series lengths differ: high=8, low=5, close=8
+}
+
+try {
+  // bar 1 has high (2) below low (2.5)
+  wasm.ohlc_indicator_series("atr", '{"period":2}',
+    Float64Array.from([3, 2, 4]), Float64Array.from([1, 2.5, 1]), Float64Array.from([2, 2.2, 2]));
+} catch (e) {
+  console.error(e.message); // high is below low at index 1
 }
 ```
 
