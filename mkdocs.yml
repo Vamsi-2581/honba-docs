@@ -32,7 +32,7 @@ plugins:
       handlers:
         python:
           paths:
-            - ../honba/python
+            - ../honba/python/src
           options:
             docstring_style: google
             show_source: true
