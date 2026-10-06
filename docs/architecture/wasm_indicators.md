@@ -9,12 +9,13 @@ JS agents. Pure compute only: no tokio, filesystem or network. Values come strai
 | Export | Signature |
 |---|---|
 | `indicator_series(name, params_json, closes)` | `(string, string, Float64Array) -> Float64Array`; throws a JS `Error` on failure |
-| `list_indicators()` | `() -> string`: JSON catalog of names, params, outputs and warm-up |
+| `ohlc_indicator_series(name, params_json, high, low, close)` | `(string, string, Float64Array, Float64Array, Float64Array) -> Float64Array`; throws a JS `Error` on failure |
+| `list_indicators()` | `() -> string`: JSON catalog listing `input` ("close" or "ohlc"), `export` function name, params, outputs and warm-up |
 
-The result has one value per input close. The leading warm-up values are `NaN` and are kept.
-`params_json` is a JSON object (blank means `{}`); unknown fields are rejected.
+The result has one value per input close (or bar). The leading warm-up values are `NaN` and are kept.
+`params_json` is a JSON object (blank means `{}`); unknown fields are rejected. The `high`, `low`, and `close` arrays in `ohlc_indicator_series` must have equal length.
 
-## Supported indicators
+## Supported indicators (close-only)
 
 | name | params (default) | warm-up `NaN`s |
 |---|---|---|
@@ -23,24 +24,37 @@ The result has one value per input close. The leading warm-up values are `NaN` a
 | `macd` | `fast` (12), `slow` (26), `signal` (9), `output`: `macd` / `signal` / `histogram` (default `macd`) | `slow + signal - 2` |
 | `bollinger` | `period` (required), `k` (2.0), `output`: `middle` / `upper` / `lower` (default `middle`) | `period - 1` |
 
-`macd` requires `fast < slow`; `bollinger` requires finite `k >= 0`. ATR needs OHLC bars and is
-not exposed.
+`macd` requires `fast < slow`; `bollinger` requires finite `k >= 0`.
+
+## Supported indicators (OHLC)
+
+Available only via `ohlc_indicator_series`:
+
+| name | params | warm-up `NaN`s |
+|---|---|---|
+| `atr` (Wilder) | `period` (required, integer in `1..=1000000`) | `period - 1` |
+
+ATR uses the first bar's `high - low` as its first true range, then `max(high - low, |high - prev_close|, |low - prev_close|)`; the first value is the mean of the first `period` true ranges, then Wilder smoothing. This matches the Python `Atr(include_first_bar=True)` but differs from the Python default (`include_first_bar=False`, which warms up `period + 1` bars).
 
 ## Errors
 
 A failure throws a JS `Error` with a message; the call never returns infinity. It throws on:
 
-- unknown indicator name;
+- unknown indicator name (or a close-only name like `sma` passed to `ohlc_indicator_series`, or an
+  OHLC-only name like `atr` passed to `indicator_series`);
 - `period` (or `fast`/`slow`/`signal`) of 0, above 1,000,000, fractional, or missing where
   required; bad `output`; unknown param fields;
 - any `NaN` or infinite input value;
+- `ohlc_indicator_series`: the `high`, `low`, and `close` arrays having different lengths;
 - finite input whose result overflows `f64` (non-finite output, for example an SMA of values
   near `1e308`).
 
 Empty input returns an empty array. Params are validated before the data, so a bad request fails
 the same way on any input.
 
-## Example
+## Examples
+
+### Close-only indicators
 
 ```js
 const wasm = require("./pkg"); // output of wasm-pack build --target nodejs
@@ -56,8 +70,31 @@ try {
 } catch (e) {
   console.error(e.message); // invalid params: `period` must be in 1..=1000000, got 0
 }
+```
 
+### OHLC indicators
+
+```js
+const high = Float64Array.from([11, 12, 13, 12, 14, 15, 14, 16]);
+const low = Float64Array.from([9, 10, 11, 10, 12, 13, 12, 14]);
+const close = Float64Array.from([10, 11, 12, 11, 13, 14, 13, 15]);
+
+const atr = wasm.ohlc_indicator_series("atr", JSON.stringify({ period: 3 }), high, low, close);
+// Float64Array [NaN, NaN, 1.33.., 1.55.., ...]
+
+try {
+  // high and low have different lengths
+  wasm.ohlc_indicator_series("atr", '{"period":3}', high, low.slice(0, 5), close);
+} catch (e) {
+  console.error(e.message); // series lengths differ: high=8, low=5, close=8
+}
+```
+
+### Catalog
+
+```js
 console.log(JSON.parse(wasm.list_indicators()).indicators.map((i) => i.name));
+// ["sma", "ema", "rsi", "macd", "bollinger", "atr"]
 ```
 
 Note: RSI on a flat-price series returns 100 once warmed up (no losses), the same in Rust and
@@ -76,9 +113,18 @@ make test-wasm    # builds for node and runs the conformance script
 
 ## Parity vectors
 
-`schema/conformance/indicator_series.json` holds 28 vectors (sma, ema, rsi, macd, bollinger over
-the inputs `empty`, `single`, `short`, `ramp`, `flat`, `zigzag`). It is run by native Rust
-(`crates/honba-api-wasm/tests/indicator_conformance.rs`), by Python
-(`python/tests/integration/test_indicator_series_conformance.py`) and by the real wasm build
-under node (`make test-wasm`). Tolerance: `null` means `NaN`; integer-valued expectations match
-exactly; others within `1e-12` relative.
+Two conformance suites ensure parity across Rust, Python and WebAssembly:
+
+- `schema/conformance/indicator_series.json`: 28 vectors (sma, ema, rsi, macd, bollinger over
+  `empty`, `single`, `short`, `ramp`, `flat`, `zigzag`). Tested by:
+  - Native Rust: `crates/honba-api-wasm/tests/indicator_conformance.rs`
+  - Python: `python/tests/integration/test_indicator_series_conformance.py`
+  - WebAssembly: `make test-wasm` (runs `tests/js/indicator_conformance.mjs` under node)
+
+- `schema/conformance/ohlc_series.json`: 10 vectors (ATR with `period` 1 and 3 over various bar
+  inputs). Tested by:
+  - Native Rust: `crates/honba-api-wasm/tests/ohlc_conformance.rs`
+  - Python: `python/tests/integration/test_ohlc_series_conformance.py`
+  - WebAssembly: `make test-wasm`
+
+Tolerance: `null` means `NaN`; integer-valued expectations match exactly; others within `1e-12` relative.
