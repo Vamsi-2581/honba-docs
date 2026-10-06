@@ -79,6 +79,7 @@ nav:
       - Autoresearch Loop: tutorials/autoresearch-loop.md
   - API:
       - Python: api/python/index.md
+      - REST API and serve: api/rest.md
   - Internals (mdBook): https://honba-labs.github.io/honba/book/
   - Architecture:
       - Overview: architecture/overview.md
