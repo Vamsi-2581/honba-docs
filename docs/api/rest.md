@@ -44,8 +44,8 @@ Served (answer with real data):
 | `POST /strategies/verify` | Verifies a manifest, returns the IR |
 | `GET /strategies` | Lists compiled strategies of this process, ordered by id |
 | `POST /strategies` | Compiles and stores a manifest; returns its id and IR |
-
-`GET /schema` answers but is a stub (`openapi` and `version` only).
+| `GET /screener/scan` | Evaluates screener filters over the bars; see below |
+| `GET /schema` | Schema info only: `{"openapi": "3.1.0", "version": <API version>}`. The full OpenAPI document is generated, see [Contracts from Rust](../architecture/contracts_from_rust.md) |
 
 **501 `not_implemented`** (in the contract, not built; category `unsupported`):
 
@@ -54,16 +54,33 @@ POST /backtests           GET /backtests/{id}       GET /backtests/{id}/journal
 POST /sweeps              GET /sweeps/{id}
 POST /orders              GET /orders               DELETE /orders/{id}
 POST /positions/close
-GET /screener/scan        GET /journals/{id}
+GET /journals/{id}
 ```
 
 A request body that does not parse on these routes is still a 422 first.
 
 ### `GET /capabilities`
 
+The manifest also carries `crates`, `market_packs`, `toolsets`, `adapters` and `features`.
 `endpoints` lists every registry row as `METHOD /path` (for example
 `GET /bars/{id}`). The additive `not_implemented` list names the rows above that
 answer 501. Agents should read it instead of probing.
+
+### `GET /screener/scan`
+
+Query: `universe` (JSON array of `SYMBOL.EXCHANGE`, required), `filters` (JSON filter group;
+omitted matches every instrument), `tf` (default `1d`) and `as_of` (inclusive). The answer is
+`{rows: [{instrument_id, metrics}]}` in instrument-id order; `metrics` holds the latest value of
+every metric the filter reads (`null` while warming up). Predicates are evaluated in Rust over the
+bar dataset. Computable metrics: `open`, `high`, `low`, `close`, `volume`,
+`price_52_week_high`/`_low` (need 252 bars), `SMA<N>` and `RSI`. Anything else is a 422
+`reason = unsupported_metric`, never an empty result; a predicate `timeframe` must equal `tf`
+(`unsupported_timeframe`). An unknown instrument is a 404. A Parquet data directory holds `1m`
+bars, so pass `tf=1m` there; the default `1d` is a 404 `market_data_unavailable`.
+
+Limits, each a 422 `too_many_rows` with `context.limit`: 1,000 instruments in the universe, 500
+matching rows, 2,000,000 bars read per scan, and 100,000 bars per instrument. Filters are bounded
+to 8 levels of nesting and 64 predicates (`invalid_filter`). There is no pagination.
 
 ### Strategy compilation: `POST /strategies` and `GET /strategies`
 
@@ -135,5 +152,14 @@ Every response, success or failure, is an envelope:
 Exactly one of `data` and `error` is present. `category` is not on the wire; it
 is derived from `code`. Use `retryable`, not the status, to decide on retry.
 (The `schema_version` value shown is illustrative; read it from a response.)
+
+## CLI
+
+- `honba serve --data-dir DIR [--addr ADDR] [--cors-origin ORIGIN]...` as above.
+- `honba verify MANIFEST.json` verifies a strategy manifest and prints the compiled IR as JSON
+  (the CLI form of `POST /strategies/verify`).
+- `honba schema export [--output DIR] [--typescript DIR] [--openapi DIR] [--pyi DIR] [--mcp DIR]`
+  writes the generated contract artifacts; `honba codegen` is an alias that emits every one
+  (see [Contracts from Rust](../architecture/contracts_from_rust.md)).
 
 Use the typed [Python client](python-sdk.md) rather than parsing this by hand.
