@@ -88,4 +88,5 @@ nav:
       - Adapter Interface: architecture/adapter_interface.md
       - Money and Currency: architecture/money.md
       - Order Reject and Cancel: architecture/order_reject_cancel.md
+      - WASM Indicators: architecture/wasm_indicators.md
 
