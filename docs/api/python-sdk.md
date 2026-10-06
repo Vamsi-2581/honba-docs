@@ -32,14 +32,41 @@ except NotFoundApiError as err:
 | `quotes(symbols, *, venue=None, as_of=None)` | `GET /quotes` | `list[QuoteTick]` |
 | `depth(instrument_id, *, levels=None)` | `GET /depth/{id}` | `Depth` |
 | `verify_strategy(manifest)` | `POST /strategies/verify` | `dict` (the IR) |
+| `strategies()` | `GET /strategies` | `list[CompiledStrategy]` |
+| `compile_strategy(manifest)` | `POST /strategies` | `CompiledStrategy` |
 
 Only these routes have methods. Every other route answers 501 and has no client
 method. `instrument_id` is `SYMBOL.EXCHANGE` (a string or an `InstrumentId`).
 `tf` is `<n><s|m|h|d|w|mo>`, default `1m` on the server. `levels` is 1..=50.
 `Client` is a context manager; `close()` releases the transport.
 
+`CompiledStrategy` has `id` (string, `sha256:<hex>`) and `ir` (dict, the verified IR).
+
 Constructors: `Client.http(base_url, **options)` (options go to `HttpTransport`),
 `Client.inproc(data_dir)`, or `Client(transport)` for any `Transport`.
+
+## Strategy compilation
+
+Use `compile_strategy(manifest)` to compile and store a strategy manifest in the server's
+in-process catalog. The returned `CompiledStrategy` holds a stable `id` (SHA-256 of the
+canonical manifest JSON) and the verified IR. The same manifest always gets the same id
+and is stored once. The catalog holds at most 1,000 strategies; a new one past the limit
+raises `ValidationApiError` with `context["reason"] == "catalog_full"`. Source code in the
+manifest (`code` or `source` keys) is rejected with `reason = "source_unsupported"`. Use
+`strategies()` to list all compiled strategies of this process, ordered by id.
+
+```python
+api = Client.inproc("./bars")
+
+# Compile a manifest
+manifest = {...}  # strategy manifest as a dict
+compiled = api.compile_strategy(manifest)
+print(compiled.id)   # sha256:...
+print(compiled.ir)   # {"warmup_bars": 20, "universe": {...}, ...}
+
+# List all compiled strategies
+all_strategies = api.strategies()
+```
 
 ## Transports
 

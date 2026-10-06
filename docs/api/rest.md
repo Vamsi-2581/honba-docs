@@ -42,13 +42,14 @@ Served (answer with real data):
 | `GET /quotes` | `symbols` (comma list), `venue`, `as_of` (inclusive) |
 | `GET /depth/{id}` | `depth` 1..=50, default 5 |
 | `POST /strategies/verify` | Verifies a manifest, returns the IR |
+| `GET /strategies` | Lists compiled strategies of this process, ordered by id |
+| `POST /strategies` | Compiles and stores a manifest; returns its id and IR |
 
 `GET /schema` answers but is a stub (`openapi` and `version` only).
 
 **501 `not_implemented`** (in the contract, not built; category `unsupported`):
 
 ```text
-POST /strategies          GET /strategies
 POST /backtests           GET /backtests/{id}       GET /backtests/{id}/journal
 POST /sweeps              GET /sweeps/{id}
 POST /orders              GET /orders               DELETE /orders/{id}
@@ -63,6 +64,27 @@ A request body that does not parse on these routes is still a 422 first.
 `endpoints` lists every registry row as `METHOD /path` (for example
 `GET /bars/{id}`). The additive `not_implemented` list names the rows above that
 answer 501. Agents should read it instead of probing.
+
+### Strategy compilation: `POST /strategies` and `GET /strategies`
+
+**`POST /strategies`**: compiles and stores a manifest. Request body is `{manifest}` only
+(unknown fields are rejected). Compilation is the same verification step as `POST /strategies/verify`;
+if it succeeds, the strategy is stored in an in-process catalog and returned as
+`{id, ir}` (the IR is a dict). The `id` is the SHA-256 of the canonical manifest JSON,
+so the same manifest gets the same id across processes and is stored once. A manifest
+already held is re-posted successfully without duplication.
+
+The catalog is per-process, in-memory, and lost on restart; capacity is bounded at
+**1,000 strategies**. A new strategy past the limit is a 422 `validation_invalid_request`
+with `context.reason = catalog_full` and `context.limit`, but re-posting a manifest
+already held always succeeds.
+
+A request body containing `code` or `source` is rejected with 422
+`context.reason = source_unsupported`. An invalid manifest gets the same 422 envelope
+as `/strategies/verify` with `context.reason` naming the issue (e.g., `no_subscriptions`).
+
+**`GET /strategies`**: lists all compiled strategies of this process, ordered by id.
+Returns `{strategies: [CompiledStrategy, ...]}` where each has `id` and `ir`.
 
 ## Behaviour notes
 
