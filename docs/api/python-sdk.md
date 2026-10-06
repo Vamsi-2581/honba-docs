@@ -3,16 +3,19 @@
 Typed access to the [REST read API](rest.md). The same `Client` methods work
 over HTTP (against `honba serve`) and in process (no server).
 
+Two interchangeable transports back it: `HttpTransport` (a running `honba serve`) and
+`InprocTransport` (the same Rust router driven in process, no server).
+
 ```python
 from honba.client import Client, NotFoundApiError
 
-# Against a running `honba serve --data-dir ./bars`
+# HttpTransport: against a running `honba serve --data-dir ./bars`
 with Client.http("http://127.0.0.1:8080", timeout=5) as api:
     print(api.health().status)
     for bar in api.bars("TCS.NSE", tf="1m", from_="2024-01-01", to="2024-01-02"):
         print(bar.ts_event.to_ns(), bar.close)
 
-# No server: the same Rust router in process (needs the native extension)
+# InprocTransport: the same Rust router in process (needs the native extension)
 api = Client.inproc("./bars")
 quotes = api.quotes(["TCS"], venue="NSE")
 try:
@@ -34,16 +37,56 @@ except NotFoundApiError as err:
 | `verify_strategy(manifest)` | `POST /strategies/verify` | `dict` (the IR) |
 | `strategies()` | `GET /strategies` | `list[CompiledStrategy]` |
 | `compile_strategy(manifest)` | `POST /strategies` | `CompiledStrategy` |
+| `screener_scan(universe, filters=None, *, tf=None, as_of=None)` | `GET /screener/scan` | `list[ScreenerResultRow]` |
+| `capabilities()` | `GET /capabilities` | `CapabilityManifest` |
+| `schema()` | `GET /schema` | `dict` (the schema info record) |
 
-Only these routes have methods. Every other route answers 501 and has no client
-method. `instrument_id` is `SYMBOL.EXCHANGE` (a string or an `InstrumentId`).
+Only these routes have methods. Every other route (backtests, sweeps, orders, positions,
+journals) answers 501 and has no client method. `instrument_id` is `SYMBOL.EXCHANGE` (a string or an `InstrumentId`).
 `tf` is `<n><s|m|h|d|w|mo>`, default `1m` on the server. `levels` is 1..=50.
 `Client` is a context manager; `close()` releases the transport.
+
+Models (`honba.client.models`, ignore unknown fields so a newer server still parses):
+`Health`, `InstrumentInfo`, `Depth`/`DepthLevel`, `CompiledStrategy`, `ScreenerResultRow` and
+`CapabilityManifest`. `Bar` and `QuoteTick` are the existing `honba.wire.wire` types.
 
 `CompiledStrategy` has `id` (string, `sha256:<hex>`) and `ir` (dict, the verified IR).
 
 Constructors: `Client.http(base_url, **options)` (options go to `HttpTransport`),
 `Client.inproc(data_dir)`, or `Client(transport)` for any `Transport`.
+
+## Capabilities and schema
+
+`capabilities()` returns a `CapabilityManifest`: `crates`, `market_packs`, `endpoints` (every
+route as `METHOD /path`), `not_implemented` (the subset that answers 501), `toolsets`, `adapters`
+and `features` (a `dict[str, bool]`). Read it instead of probing for 501s. `schema()` returns
+the served schema info as a plain dict (currently the OpenAPI version and the API version).
+
+```python
+api = Client.inproc("./bars")
+manifest = api.capabilities()
+print("POST /backtests" in manifest.not_implemented)  # True
+print(api.schema())  # {"openapi": "3.1.0", "version": "..."}
+```
+
+## Screener scan
+
+`screener_scan(universe, filters)` returns the instruments passing `filters` as
+`ScreenerResultRow(instrument_id, metrics)`, in id order. `universe` is one id or a list of
+`SYMBOL.EXCHANGE`; `filters` is a `ScreenerFilterGroup`, a predicate or the equivalent dict
+(none matches every instrument). It is evaluated by the Rust engine over the dataset's bars at
+`tf` (default `1d`; a Parquet data directory holds `1m` bars, so pass `tf="1m"` there) on the
+bars known at `as_of` (inclusive). Metrics computable from bars: `open`, `high`, `low`, `close`,
+`volume`, `price_52_week_high`/`_low`, `SMA<N>` and `RSI`. Any other metric is a
+`ValidationApiError` with `context["reason"] == "unsupported_metric"`, never an empty result;
+`NotFoundApiError` for an unknown instrument; `too_many_rows` over the limits (1,000 instruments,
+500 rows, 2,000,000 bars).
+
+```python
+rows = Client.inproc("./bars").screener_scan(["TCS.NSE", "INFY.NSE"], tf="1m")
+for row in rows:
+    print(row.instrument_id, row.metrics)
+```
 
 ## Strategy compilation
 
@@ -76,7 +119,8 @@ all_strategies = api.strategies()
 - `InprocTransport(data_dir)`: runs the Rust router in this process over the
   `SYMBOL.EXCHANGE.parquet` files in `data_dir` (`NotADirectoryError` if it is
   not a directory). The directory is loaded once per process and cached, so
-  files added later are not seen.
+  files added later are not seen. Its calls reuse the runtime started by
+  [`honba.event_loop`](../architecture/event_loop.md) if there is one.
 
 Both return every HTTP-style answer, error statuses included; the client turns
 non-2xx answers into exceptions.
@@ -117,6 +161,9 @@ subclass chosen by the envelope `code`. Attributes: `code`, `message`,
 | `UnsupportedApiError` | `unsupported` |
 | `NotImplementedApiError` (subclass of `UnsupportedApiError`) | `not_implemented` (501) |
 | `InvalidResponseError` | `invalid_response`: not an envelope, a payload that does not parse, or a `schema_version` mismatch |
+
+`NotFoundApiError` also covers an unknown route (`not_found`, an envelope rather than an empty
+body); an unsupported method on a known path is `UnsupportedApiError` (405).
 
 An unknown code from a newer server stays a plain `ApiError` with the raw code.
 
