@@ -45,6 +45,7 @@ nav:
       - getting-started/index.md
       - Installation: getting-started/installation.md
       - First Backtest: getting-started/first-backtest.md
+      - Loading Data: getting-started/loading-data.md
   - Strategies:
       - strategies/index.md
       - Writing Strategies: strategies/writing_strategies.md
