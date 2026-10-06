@@ -106,6 +106,8 @@ Returns `{strategies: [CompiledStrategy, ...]}` where each has `id` and `ir`.
 | No bar at or before `as_of`; timeframe not held; bar-only depth | 404 | `market_data_unavailable` |
 | Bad `tf`/`from`/`to`, empty range, unknown query key, malformed id, `depth` out of range | 422 | `validation_invalid_request` |
 | More than 100,000 bars | 422 | `validation_invalid_request` (`too_many_rows`) |
+| Unknown route | 404 | `not_found` (an envelope, not an empty body) |
+| Known path, unsupported method | 405 | `unsupported` (an envelope) |
 | Route not built | 501 | `not_implemented` |
 | Port unavailable / timeout / transport | 503 / 504 / 502 | `market_data_unavailable` / `timeout` / `transport_error` |
 
