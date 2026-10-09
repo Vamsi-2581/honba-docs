@@ -52,10 +52,15 @@ Served (answer with real data):
 ```text
 POST /backtests           GET /backtests/{id}       GET /backtests/{id}/journal
 POST /sweeps              GET /sweeps/{id}
-POST /orders              GET /orders               DELETE /orders/{id}
-POST /positions/close
+GET /orders
 GET /journals/{id}
 ```
+
+`POST /orders` is risk-gated (ADR 0018): a refusal is a 422 carrying the
+`risk_*` code (category `risk`, not retryable); `DELETE /orders/{id}` cancels
+without a gate and `POST /positions/close` closes without one. Until the write
+ledger of E11-S7 exists, an approved order is acknowledged with 200 and no
+gateway call is made.
 
 A request body that does not parse on these routes is still a 422 first.
 

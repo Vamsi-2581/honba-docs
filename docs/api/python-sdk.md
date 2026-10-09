@@ -153,8 +153,8 @@ subclass chosen by the envelope `code`. Attributes: `code`, `message`,
 | `NotFoundApiError` | `not_found`, `instrument_not_found`, `order_not_found` |
 | `AuthApiError` | `unauthorized`, `forbidden` |
 | `RateLimitedApiError` | `rate_limited` |
-| `RiskApiError` | `risk_max_*` |
-| `OrderRejectedApiError` | `order_rejected` |
+| `RiskApiError` | `risk_*` (422; includes `risk_trading_halted`, `risk_instrument_unknown`, `order-rate`/quantity/tick/band/notional refusals) |
+| `OrderRejectedApiError` | `order_rejected`, `order_execution_unavailable` |
 | `MarketDataUnavailableApiError` | `market_data_unavailable` (for example no depth on bars) |
 | `TransportApiError` | `timeout`, `transport_error` |
 | `InternalApiError` | `internal_error` |
