@@ -110,9 +110,10 @@ A strategy running in Tier 2 is **the same code** that will run live.
 
 ### The API
 
-    from honba.backtest import BacktestNode, BacktestConfig
+    import honba
 
-    config = BacktestConfig(
+    result = honba.backtest(
+        SmaCrossover,
         universe="nifty50",
         start="2020-01-01",
         end="2024-12-31",
@@ -121,9 +122,6 @@ A strategy running in Tier 2 is **the same code** that will run live.
         latency_ms=50,
         calendar="NSE",
     )
-
-    node = BacktestNode(config)
-    result = node.run(SmaCrossover)
 
     print(result.summary())
     result.tearsheet().save("sma_crossover.html")
@@ -191,7 +189,6 @@ is used for:
     from honba.algo_analytics import monte_carlo
 
     mc = monte_carlo(
-        node=node,
         strategy=SmaCrossover,
         iterations=1000,
         method="bootstrap",     # "bootstrap", "shuffle", "block_bootstrap"
@@ -210,7 +207,6 @@ is used for:
     from honba.algo_analytics import walk_forward
 
     wf = walk_forward(
-        node=node,
         strategy=SmaCrossover,
         train_months=24,
         test_months=6,

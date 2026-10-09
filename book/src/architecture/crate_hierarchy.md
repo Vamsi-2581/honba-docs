@@ -23,7 +23,7 @@ and strategies, adapted to Rust's crate system.
       │     ├── honba-algo-import
       │     ├── honba-algo-export
       │     │
-      │     └── honba-india
+      │     └── honba-market
 
 ## Allowed Dependencies
 
@@ -40,10 +40,10 @@ This table is machine-enforced. Any dependency not listed here fails CI.
 | `honba-algo-analytics` | `honba-messages`, `honba-entities` |
 | `honba-algo-import` | `honba-messages`, `honba-entities` |
 | `honba-algo-export` | `honba-messages`, `honba-entities` |
-| `honba-india` | `honba-entities` |
+| `honba-market` | `honba-entities` |
 
-Note that `honba-india` depends **only** on `honba-entities`. It does not
-depend on `honba-algo`, which means the Indian market module can be tested
+Note that `honba-market` depends **only** on `honba-entities`. It does not
+depend on `honba-algo`, which means the market module can be tested
 in complete isolation from the engine. This is deliberate: NSE calendar
 logic should have zero coupling to event dispatch.
 
@@ -125,23 +125,20 @@ engine. This is where the determinism guarantee lives.
 **Rule:** `honba-algo` defines the interfaces that adapters implement. It
 never mentions a specific broker.
 
-## The Indian Module
+## The Market Module
 
-### `honba-india`
+### `honba-market`
 
-Everything that is true of the Indian market and false of every other market.
+Market contracts, market packs, calendars, settlement, and costs.
 
     src/
-    ├── calendar/           — NSE/BSE sessions, holidays, Muhurat
-    ├── costs/              — STT, GST, stamp duty, SEBI fees, exchange fees
-    ├── universes/          — NIFTY 50, BANK NIFTY, Alpha30, rebalance logic
-    ├── mutual_funds/       — AMFI scheme registry, NAV history, SIP
-    ├── etf/                — tracking error, iNAV, creation units
-    ├── options/            — expiry cycles, strike intervals, Greeks
-    ├── equities/           — corporate actions, circuit limits
-    └── fno/                — futures rollover, SPAN margin
+    ├── calendar.rs         — Trading calendar abstractions
+    ├── costs.rs            — Cost calculation models
+    ├── universes.rs        — Universe definitions & rebalance logic
+    ├── rules.rs            — Exchange trading rules
+    └── india/              — India-specific implementations (NSE/BSE, STT, etc.)
 
-This is the crate where most of Honba's India-specific value lives, and it
+This is the crate where market-specific contracts and logic live, and it
 is intentionally isolated. A test of the NSE calendar does not spin up an
 engine; it calls `is_trading_day(date)`.
 
@@ -175,7 +172,7 @@ changed, what else would have to change?**
 - `honba-messages` changes only when the vocabulary of the engine changes.
   This is rare.
 - `honba-entities` changes when the domain model changes. Less rare.
-- `honba-india` changes whenever SEBI changes a rule. This happens often,
+- `honba-market` changes whenever market rules change. This happens often,
   and the isolation means it does not ripple into the engine.
 - `honba-algo` changes when the event model changes. Very rare.
 - The strategy and testing crates change constantly during research.

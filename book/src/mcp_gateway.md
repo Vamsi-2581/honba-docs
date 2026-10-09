@@ -82,9 +82,9 @@ An agent connected to the MCP server can hold this conversation:
     User: Find a momentum strategy on Alpha30 that survives validation.
 
     Agent: [calls list_universes()]
-           → nifty50, banknifty, alpha30_nifty100, alpha30_nifty200
+           → nifty50, banknifty, nifty200_alpha30, alpha30
 
-    Agent: [calls universe_constituents(universe="alpha30_nifty100",
+    Agent: [calls universe_constituents(universe="nifty200_alpha30",
                                         date="2020-01-01")]
            → [RELIANCE, TCS, HDFCBANK, ...]
 
@@ -93,7 +93,7 @@ An agent connected to the MCP server can hold this conversation:
 
     Agent: [calls run_vector_backtest(
               strategy="momentum_top_n",
-              universe="alpha30_nifty100",
+              universe="nifty200_alpha30",
               start="2020-01-01",
               end="2024-12-31")]
            → Sharpe 1.18 (Tier 1)
@@ -188,7 +188,7 @@ Besides tools, the MCP server exposes resources that agents can read
 directly:
 
     catalog://nifty50              — catalog metadata for NIFTY 50
-    universe://alpha30_nifty100    — current constituents
+    universe://nifty200_alpha30    — current constituents
     calendar://nse/2026            — trading days for 2026
     strategy://SmaCrossover        — strategy source and metadata
     journal://h_2024_03_17_001     — full hypothesis record
@@ -203,70 +203,3 @@ Pre-built prompt templates are exposed for common workflows:
     prompt://research/hypothesis-generation
     prompt://research/strategy-critique
     prompt://research/regime-analysis
-
-An agent can use these as starting points for its own sessions.
-
-## Safety
-
-The MCP gateway gives an external agent the ability to run arbitrary
-backtests and write files. This is powerful and requires guardrails:
-
-- **Budget limits.** A maximum number of backtests per session.
-- **Confirmation for writes.** `write_strategy` requires an explicit
-  confirmation unless disabled.
-- **Sandbox execution.** Strategies are executed in a subprocess with
-  resource limits, not in the server process.
-- **No credentials.** The MCP server does not have access to broker
-  credentials. It can run backtests and paper trades, not live orders.
-- **Audit log.** Every tool call is logged to
-  `data/journals/mcp_audit.parquet`.
-
-The MCP gateway is designed for research, not for live trading
-automation. Live order placement is not exposed via MCP.
-
-## Extending the Server
-
-Adding a new tool:
-
-    from honba.ai.mcp import tool, ToolContext
-
-
-    @tool(
-        name="my_custom_tool",
-        description="Does something useful.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "argument": {"type": "string"},
-            },
-            "required": ["argument"],
-        },
-    )
-    async def my_custom_tool(
-        ctx: ToolContext,
-        argument: str,
-    ) -> dict:
-        # Implementation
-        return {"result": "..."}
-
-Tools are auto-registered when the module is imported. To add a tool
-to Honba itself, place it in `python/honba/ai/mcp/tools.py`.
-
-## A Note on Scope
-
-The MCP gateway exposes Honba's **research** capabilities. It does
-not expose:
-
-- Live order placement
-- Broker credential management
-- Account balance queries
-- Position modification on live accounts
-
-This boundary is intentional. An AI agent should be able to run
-research and prepare recommendations. Whether to act on those
-recommendations is a decision that remains with the human user.
-
-## Next Steps
-
-- **[Natural Language Verification](nl_verification.md)** — using an
-  LLM to critique strategies in plain English.

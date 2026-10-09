@@ -22,11 +22,11 @@ necessary for debugging any behaviour that crosses layer boundaries.
     │ (Rust)       │
     └──────┬───────┘
            │
-           ├──► Cache        4a. Update last price
+           ├────► Cache        4a. Update last price
            │
-           ├──► BarAggregator 4b. Roll into a 1-min bar
+           ├────► BarAggregator 4b. Roll into a 1-min bar
            │
-           └──► Strategy      4c. Deliver to on_quote()
+           └────► Strategy      4c. Deliver to on_quote()
                      │
                      ▼
               ┌──────────────┐
@@ -199,7 +199,7 @@ other than fill quality, that is a bug in the engine, not in the strategy.
 The engine emits a structured log of every event. In backtest mode, this
 log is retained and can be replayed:
 
-    BacktestNode::new(config)
+    Engine::new(config)
         .with_event_log("events.parquet")
         .run(strategy);
 

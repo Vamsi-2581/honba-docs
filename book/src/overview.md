@@ -6,21 +6,21 @@ The layering is not a suggestion — it is checked in CI.
 
 ## The Four Layers
 
-    ┌──────────────────────────────────────────────────────────────┐
+    ┌─────────────────────────────────────────────────────────────┐
     │ Layer 4 — AI Feedback                                        │
     │   LLM research analyst · autoresearch loop · RL training     │
     │   MCP gateway · natural-language verification                │
-    ├──────────────────────────────────────────────────────────────┤
+    ├─────────────────────────────────────────────────────────────┤
     │ Layer 3 — Strategy & Optimization                            │
     │   Vectorized pre-filter · Nautilus-style event-driven sim    │
     │   Barter-style concurrent parameter sweep                    │
-    ├──────────────────────────────────────────────────────────────┤
+    ├─────────────────────────────────────────────────────────────┤
     │ Layer 2 — Data & Execution                                   │
     │   Broker adapters · Parquet catalog · Indian market module   │
-    ├──────────────────────────────────────────────────────────────┤
+    ├─────────────────────────────────────────────────────────────┤
     │ Layer 1 — Rust Core                                          │
     │   Deterministic event kernel · Async concurrent execution    │
-    └──────────────────────────────────────────────────────────────┘
+    └─────────────────────────────────────────────────────────────┘
 
 Dependencies flow **downward only**. Nothing in Layer 2 imports from Layer 3.
 Nothing in Layer 1 imports from anywhere. This is enforced by
@@ -44,7 +44,7 @@ knows about NSE trading hours, STT rates, index constituents, and broker
 WebSocket protocols. It translates between the external world and the
 messages defined in Layer 1.
 
-Crates: `honba-india`, `honba-algo-import`, `honba-algo-export`.
+Crates: `honba-market`, `honba-algo-import`, `honba-algo-export`.
 
 The broker adapters themselves live in a **separate repository** so that
 adding a new broker does not require touching the core.

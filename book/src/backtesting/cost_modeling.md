@@ -29,12 +29,12 @@ number.
 
 The cost model sits between the strategy's order and the fill event:
 
-    Strategy         → SubmitOrder
-    RiskEngine       → (approved)
-    CostModel        → (compute cost preview)
+    Strategy          → SubmitOrder
+    RiskEngine        → (approved)
+    CostModel         → (compute cost preview)
     SimulatedExchange → (match against book)
-    CostModel        → (deduct cost from fill)
-    Fill event       → delivered to strategy
+    CostModel         → (deduct cost from fill)
+    Fill event        → delivered to strategy
 
 Costs are deducted at **fill time**, not at order time. If an order is
 partially filled, cost is deducted proportionally. If an order is
@@ -100,7 +100,6 @@ sensitivity sweep:
     from honba.backtest.cost import sensitivity
 
     sweep = sensitivity(
-        node=node,
         strategy=SmaCrossover,
         brokerage=[0, 10, 20, 30, 50],
         latency_ms=[0, 25, 50, 100, 200],
@@ -202,7 +201,7 @@ the Finance Act changes STT, a new version is added without modifying
 the old one. Historical backtests continue to use the correct rate for
 their period.
 
-    # Rate history in honba-india/src/costs/rates/
+    # Rate history in honba-market/src/india/costs/ or honba.markets.india.costs
     finance_act_2020.rs
     finance_act_2024.rs
     finance_act_2026.rs

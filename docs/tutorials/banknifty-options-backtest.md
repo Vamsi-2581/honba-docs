@@ -45,6 +45,7 @@ Create `banknifty_straddle.py`:
 
 
     class BankNiftyStraddle(Strategy):
+        name = "banknifty_straddle"
         lots: int = 1
         lot_size: int = 15
         delta_close_threshold: float = 0.35
@@ -85,32 +86,18 @@ Create `banknifty_straddle.py`:
 
 Append the configuration:
 
-    from honba.backtest import BacktestNode, BacktestConfig
-    from honba.backtest.cost import IndiaOptionsIndex
-
-    config = BacktestConfig(
-        universe=["BANKNIFTY"],
-        start="2023-01-01",
-        end="2024-12-31",
-        initial_capital=2_000_000,
-        cost_model=IndiaOptionsIndex(
-            brokerage="per_order",
-            brokerage_value=20.0,
-            stt_on_exercise=True,
-        ),
-        latency_ms=100,
-        calendar="NSE",
-        options={
-            "settlement": "cash",
-            "auto_exercise": True,
-        },
-    )
+    from honba import Honba
 
     if __name__ == "__main__":
-        node = BacktestNode(config)
-        result = node.run(BankNiftyStraddle)
-        print(result.summary())
-        result.tearsheet().save("banknifty_straddle.html")
+        session = Honba.backtest(
+            BankNiftyStraddle(),
+            symbol="BANKNIFTY",
+            start="2023-01-01",
+            end="2024-12-31",
+            cash=2_000_000,
+        )
+        result = session.run()
+        result.print_report()
 
 ## Step 4: Run It
 
@@ -182,9 +169,9 @@ threshold, exit timing) is larger relative to the signal.
 
     from honba.algo_analytics import walk_forward, monte_carlo
 
-    wf = walk_forward(node, BankNiftyStraddle,
+    wf = walk_forward(session, BankNiftyStraddle,
                      train_months=12, test_months=6, n_folds=4)
-    mc = monte_carlo(node, BankNiftyStraddle, iterations=500)
+    mc = monte_carlo(session, BankNiftyStraddle, iterations=500)
 
     print(wf.summary())
     print(mc.summary())

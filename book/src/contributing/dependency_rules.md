@@ -22,7 +22,7 @@ it grows.
 | `honba-algo-analytics` | `honba-messages`, `honba-entities` |
 | `honba-algo-import` | `honba-messages`, `honba-entities` |
 | `honba-algo-export` | `honba-messages`, `honba-entities` |
-| `honba-india` | `honba-entities` |
+| `honba-market` | `honba-entities` |
 
 Non-`honba-*` dependencies (serde, tokio, arrow, etc.) are not
 restricted by the rule. They are audited separately by `cargo deny`.
@@ -72,36 +72,36 @@ They do not need the engine.
 Data I/O produces and consumes messages and entities. It has no need
 for the engine.
 
-### `honba-india` depends only on `honba-entities`
+### `honba-market` depends only on `honba-entities`
 
-This is the most important restriction. `honba-india` is the
-Indian-market specialization module. It should be testable without
-spinning up an engine. The NSE calendar, cost model, and universe
+This is the most important restriction. `honba-market` is the
+market specialization module. It should be testable without
+spinning up an engine. The market calendars, cost models, and universe
 definitions are all pure data transformations that take a date and
 return a value.
 
-Adding `honba-algo` as a dependency of `honba-india` would mean the
+Adding `honba-algo` as a dependency of `honba-market` would mean the
 calendar cannot be tested without an event loop. This is exactly the
 kind of coupling the hierarchy is designed to prevent.
 
 ## When You Need a Forbidden Dependency
 
-If a piece of code in `honba-india` needs something from `honba-algo`,
+If a piece of code in `honba-market` needs something from `honba-algo`,
 you have four options, in order of preference:
 
 ### 1. Move the code to the lower crate
 
-The most common case. If `honba-india` needs to know about a
+The most common case. If `honba-market` needs to know about a
 `Price` type from `honba-algo`, the `Price` type probably belongs in
 `honba-messages`, not `honba-algo`.
 
 ### 2. Introduce a trait in the lower crate
 
-If `honba-india` needs to call a function from `honba-algo`, define a
-trait in `honba-india` and implement it in `honba-algo`. This inverts
+If `honba-market` needs to call a function from `honba-algo`, define a
+trait in `honba-market` and implement it in `honba-algo`. This inverts
 the dependency.
 
-    // In honba-india
+    // In honba-market
     pub trait Clock {
         fn now(&self) -> UnixNanos;
     }
@@ -140,7 +140,7 @@ actual dependencies against the allowed set.
         "honba-algo-analytics": {"honba-messages", "honba-entities"},
         "honba-algo-import": {"honba-messages", "honba-entities"},
         "honba-algo-export": {"honba-messages", "honba-entities"},
-        "honba-india": {"honba-entities"},
+        "honba-market": {"honba-entities"},
     }
 
 Running it locally:
@@ -151,7 +151,7 @@ Running it locally:
 If a crate violates the hierarchy:
 
     python3 scripts/dependency_graph.py
-    # VIOLATION: honba-india illegally depends on ['honba-algo']
+    # VIOLATION: honba-market illegally depends on ['honba-algo']
     #
     # 1 violation(s) found.
 
@@ -163,7 +163,7 @@ dependency.
 Dev dependencies (under `[dev-dependencies]` in `Cargo.toml`) are
 **not** checked by the hierarchy script. This is deliberate: tests
 often need to set up scenarios that cross layers. For example, testing
-`honba-india` might use `honba-algo-testing` to build a small fixture
+`honba-market` might use `honba-algo-testing` to build a small fixture
 engine.
 
 The rule is: a **runtime** dependency must follow the hierarchy. A
@@ -171,7 +171,7 @@ The rule is: a **runtime** dependency must follow the hierarchy. A
 
 This means the following is legal:
 
-    # honba-india/Cargo.toml
+    # honba-market/Cargo.toml
     [dependencies]
     honba-entities = { workspace = true }
 
@@ -180,7 +180,7 @@ This means the following is legal:
 
 But this is not:
 
-    # honba-india/Cargo.toml
+    # honba-market/Cargo.toml
     [dependencies]
     honba-entities = { workspace = true }
     honba-algo = { workspace = true }            # runtime violation
@@ -212,7 +212,7 @@ dependencies reduces build time and clarifies intent.
 ## Updating the Rule Table
 
 If you genuinely need to add a new edge to the hierarchy — for
-example, because `honba-india` needs to depend on `honba-algo` for a
+example, because `honba-market` needs to depend on `honba-algo` for a
 new feature — you must:
 
 1. Justify the change in an issue or pull request description.

@@ -1,9 +1,9 @@
 # Indian Markets
 
 This section documents what is true of the Indian market and false of
-every other market. Everything here lives in the `honba-india` crate,
-which depends only on `honba-entities` — meaning it can be tested
-without an engine.
+every other market. Everything here lives in the `honba-market` crate
+and the Python `honba.markets.india` module — providing clean, self-contained
+market rules that can be tested without a full engine.
 
 ## The Documents
 
@@ -21,8 +21,8 @@ without an engine.
 - **[Options](options.md)** — weekly and monthly expiry cycles, strike
   intervals, Greeks, and the STT asymmetry between premium and
   exercise.
-- **[Brokers](brokers.md)** — practical differences between the eight
-  supported broker adapters.
+- **[Brokers](brokers.md)** — practical differences between the supported
+  broker adapters.
 
 ## The Two Facts That Change Everything
 

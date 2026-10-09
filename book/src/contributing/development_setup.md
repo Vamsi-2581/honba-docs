@@ -63,7 +63,7 @@ The development cycle depends on which layer you are working on.
     cargo test -p honba-messages
 
     # Run a specific test
-    cargo test -p honba-india -- calendar
+    cargo test -p honba-market -- calendar
 
 Rust incremental builds are fast for a single crate. Full workspace
 builds take 30–90 seconds on the first pass and a few seconds
@@ -126,7 +126,7 @@ Tests live in three places:
     cargo test --workspace
 
     # Just one crate, with output
-    cargo test -p honba-india -- --nocapture
+    cargo test -p honba-market -- --nocapture
 
     # Doc tests only
     cargo test --workspace --doc
@@ -196,7 +196,7 @@ The backtest engine can write a structured event log to Parquet and
 replay it deterministically. This is the primary debugging tool for
 bugs that only appear under specific market conditions:
 
-    node.run(strategy, event_log="./debug/events.parquet")
+    honba.backtest(strategy, event_log="./debug/events.parquet")
 
 Then:
 
@@ -209,7 +209,7 @@ If you are testing adapter code, clone that repository as a sibling:
 
     parent/
     ├── honba/
-    ├── honba-adapters/
+    └── honba-adapters/
 
 The adapter test suite uses recorded fixtures, so live broker
 credentials are not required. Adapters that need credentials (for the
@@ -242,17 +242,17 @@ Adding a crate is a significant change. Open an issue first to
 discuss whether the new crate is the right home for the code, or
 whether it belongs in an existing crate.
 
-### Update the Indian market calendar
+### Update the market calendar
 
 The calendar lives in
-`crates/honba-india/src/calendar/data/<year>.rs`. NSE publishes the
+`crates/honba-market/src/india/calendar/` and `honba.markets.india.calendar`. NSE publishes the
 following year's calendar in December. When the new calendar is
 released:
 
-1. Add `crates/honba-india/src/calendar/data/<new_year>.rs`.
+1. Add calendar data for the new year.
 2. Add the year to the `Calendar::for_year()` match.
-3. Add tests for the new year in `calendar_tests.rs`.
-4. Bump the patch version of `honba-india`.
+3. Add tests for the new year.
+4. Bump the patch version of `honba-market`.
 
 When NSE issues an amendment, update the same file and bump the patch
 version again. Historical calendars are never modified — a 2025
@@ -268,24 +268,3 @@ The GitHub Actions workflow runs on every push and pull request:
 | `python` | ruff, mypy, pytest |
 | `license-audit` | `cargo deny` |
 | `docs` | mkdocs build |
-
-A pull request cannot merge unless all four pass.
-
-## A Note on the Workspace Layout
-
-The workspace has **six repositories**, not one. When working on the
-core, you only need `honba`. When working on adapters, clone
-`honba-adapters` as a sibling. When working on strategies, clone
-`honba-strategies`.
-
-    honba-workspace/
-    ├── honba/              # the core (this repository)
-    ├── honba-adapters/     # broker adapters
-    ├── honba-strategies/   # community strategy catalog
-    ├── honba-examples/     # learning-path examples
-    ├── honba-frontend/     # dashboard
-    └── honba-docs/         # documentation site
-
-This separation mirrors StockSharp's split between core and
-connectors. The core does not import any adapter, so a change to an
-adapter cannot break the core.

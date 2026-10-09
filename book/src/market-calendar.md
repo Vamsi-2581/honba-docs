@@ -3,7 +3,7 @@
 The Indian market calendar is not a simple "weekdays minus holidays" rule.
 It has pre-open sessions, special sessions (Muhurat), segment-specific
 holidays, and settlement holidays that differ from trading holidays. Honba
-models all of these in `honba-india::calendar`.
+models all of these in `honba-market::calendar` (or Python `honba.markets.india.calendar`).
 
 *Last verified: 2026-09-30 against NSE circulars.*
 
@@ -111,7 +111,7 @@ Pujan (8 Nov, Sunday — but Muhurat trading occurs).[reference:4]
 
 ## The `MarketCalendar` API
 
-    use honba_india::calendar::{MarketCalendar, NseCalendar, Session, DayType};
+    use honba_market::calendar::{MarketCalendar, NseCalendar, Session, DayType};
 
     let cal = NseCalendar::new(2026);
 
@@ -181,6 +181,6 @@ session.
 The authoritative calendar is published by NSE in an annual circular
 (usually in December for the following year) and updated by amendment.
 BSE publishes a mirror. Honba's calendar data lives in
-`honba-india/src/calendar/data/2026.rs` and is regenerated from the
+`crates/honba-market/src/india/calendar/` and `honba.markets.india.calendar` and is regenerated from the
 circular text. When NSE issues an amendment, update the data file and
-bump the patch version of `honba-india`.
+bump the patch version of `honba-market`.

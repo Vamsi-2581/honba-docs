@@ -9,8 +9,6 @@
 
 # Architecture
 
-# Architecture
-
 - [Overview](architecture/overview.md)
 - [Crate Hierarchy](architecture/crate_hierarchy.md)
 - [Message Flow](architecture/message_flow.md)
@@ -23,6 +21,7 @@
 - [Latency Modeling](backtesting/latency_modeling.md)
 - [Statistical Validation](backtesting/statistical_validation.md)
 - [Three Tier Pipeline](backtesting/three_tier_pipeline.md)
+- [Avoiding Backtest Biases](backtesting/avoiding_backtest_biases.md)
 
 # Contributing
 
@@ -31,4 +30,3 @@
 - [Dependency Rules](contributing/dependency_rules.md)
 - [Development Setup](contributing/development_setup.md)
 - [Contributing](contributing/index.md)
-

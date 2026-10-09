@@ -1,5 +1,4 @@
 # Honba
-# Honba
 
 **AI-native trading and research platform for Indian markets.**
 
@@ -52,5 +51,4 @@ proven ideas into a single stack:
 
 Honba is under active development. The crate skeleton is complete and the
 dependency hierarchy is enforced in CI. The `honba-messages`, `honba-entities`,
-and `honba-india` crates are the current focus.
-
+and `honba-market` crates are the current focus.

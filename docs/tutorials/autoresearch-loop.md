@@ -69,7 +69,7 @@ Create `autoresearch.py`:
             "on the NSE Alpha 30 universe that survive realistic Indian "
             "trading costs and out-of-sample validation."
         ),
-        universe="alpha30_nifty100",
+        universe="nifty200_alpha30",
         start="2018-01-01",
         end="2024-12-31",
         initial_capital=1_000_000,
@@ -178,8 +178,9 @@ Three things to check before trusting the result:
    sweep around the winning parameters:
 
        from honba.algo_analytics import parameter_surface
+
        surface = parameter_surface(
-           node=node, strategy=survivor.strategy_class,
+           strategy=survivor.strategy_class,
            params={
                "lookback": range(40, 90, 10),
                "top_n": [5, 10, 15, 20],

@@ -86,7 +86,7 @@ Reading the journal:
     journal = Journal("./data/journals")
 
     # All hypotheses that touched Alpha30
-    journal.search(universe="alpha30_nifty100")
+    journal.search(universe="nifty200_alpha30")
 
     # Hypotheses similar to a new idea
     journal.similar("mean reversion on midcap bank stocks")
@@ -110,7 +110,7 @@ vocabulary.
 
     loop = ResearchLoop(
         config=LoopConfig(
-            universe="alpha30_nifty100",
+            universe="nifty200_alpha30",
             start="2018-01-01",
             end="2024-12-31",
             initial_capital=1_000_000,
@@ -265,7 +265,7 @@ rest.
     # configs/ai/research_loop.toml
     [loop]
     iterations = 100
-    universe = "alpha30_nifty100"
+    universe = "nifty200_alpha30"
     start = "2018-01-01"
     end = "2024-12-31"
     initial_capital = 1_000_000

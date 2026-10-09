@@ -1,6 +1,6 @@
 # Cost Model
 
-`honba-india` separates *rates* (what the tax and fee schedule looks
+`honba-market` (and Python `honba.markets.india.costs`) separates *rates* (what the tax and fee schedule looks
 like) from *application* (how they are applied to a specific fill).
 
 ## Rates: `SttRates`
@@ -9,7 +9,7 @@ Securities Transaction Tax is charged per segment, and the rate differs
 between delivery and intraday. `SttRates::new` takes the full schedule:
 
 ```rust
-use honba_india::{SttRates, Segment};
+use honba_market::{SttRates, Segment};
 
 let stt = SttRates::new(
     /* delivery_buy_bps  */ 10.0,
@@ -40,7 +40,7 @@ oversight.
 `CostBreakdown` per fill:
 
 ```rust
-use honba_india::{CostModel, SttRates, Segment};
+use honba_market::{CostModel, SttRates, Segment};
 
 let model = CostModel::new(
     stt,
@@ -59,58 +59,13 @@ let breakdown = model.compute(
 );
 ```
 
-### `CostBreakdown`
+## Python Statutory Costs
 
-The return type itemises every charge so you can attribute them
-separately in analytics:
-
-| Field | Description |
-|---|---|
-| `brokerage` | Broker commission |
-| `stt` | Securities Transaction Tax |
-| `exchange` | Exchange transaction charge |
-| `gst` | GST on brokerage and exchange |
-| `stamp` | Stamp duty (buy side only) |
-| `sebi` | SEBI turnover fee |
-| `total` | Sum of the above |
-
-## Wiring into a run
-
-In a `Sim`, attach one `CostModel` as a child of the top-level container
-and let the execution component look it up. The reference Python bridge
-uses `sim.find("cost_model")` for exactly this.
+In Python backtests, statutory costs are calculated using the built-in NSE cost model:
 
 ```python
-CostModel(brokerage_bps=3.0, stt_bps=1.0, parent=sim)
-BarFill(slippage_bps=2.0, cost_model=sim.find("cost_model"), parent=sim)
+from honba.markets.india.costs import nse_equity_delivery_fill_cost
+from honba.domain.order import OrderSide
+
+cost = nse_equity_delivery_fill_cost(OrderSide.BUY, quantity=100.0, price=2500.0)
 ```
-
-## Sources for the `CostModelSource` trait
-
-Like `HolidaySource`, the rates are not hardcoded — you supply them.
-`CostModelSource` lets you load a rate sheet from a TOML file or a
-database and produce a fresh `SttRates` and `CostModel` each session.
-
-```rust
-pub trait CostModelSource {
-    type Error;
-    fn load(&self, as_of: NaiveDate) -> Result<CostModel, Self::Error>;
-}
-```
-
-Use `as_of` for the rate-schedule date, not the trade date — brokers
-sometimes back-date a rate change by a session.
-
-## Testing
-
-Cost models are easy to test because the arithmetic is deterministic:
-
-```rust
-let got = model.compute(100.0, 1.0, Side::Buy, Segment::EquityDelivery);
-let want = CostBreakdown { brokerage: 0.03, stt: 0.1, /* ... */ };
-assert_eq!(got, want);
-```
-
-Keep a golden table of expected values per segment, updated whenever the
-schedule changes. That is what catches a silently-wrong rate before it
-hits a live P&L report.

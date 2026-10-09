@@ -80,6 +80,8 @@ nav:
       - SIP Backtest: tutorials/sip-backtest.md
       - Alpha30 Factor Model: tutorials/alpha30-factor-model.md
       - Autoresearch Loop: tutorials/autoresearch-loop.md
+  - Examples:
+      - examples/index.md
   - API:
       - Python: api/python/index.md
       - Python SDK (client): api/python-sdk.md

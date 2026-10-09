@@ -11,13 +11,13 @@ crosses back below. Position size is equal-weight across the universe.
 
 Create `first_backtest.py`:
 
-    from honba.strategies.base import Strategy
-    from honba.strategies.indicators import SMA
-    from honba.india.universes import nifty50
-    from honba.backtest import BacktestNode, BacktestConfig
+    from honba import Honba, Strategy
+    from honba.indicators import SMA
+    from honba.markets.india.universes import resolve_universe
 
 
     class SmaCrossover(Strategy):
+        name = "sma_crossover"
         fast_period = 20
         slow_period = 50
 
@@ -30,26 +30,23 @@ Create `first_backtest.py`:
             s = self.slow.update(bar.close)
             if f is None or s is None:
                 return
-            if f > s and not self.position.is_long:
-                self.buy(bar.instrument, size=self.target_size)
-            elif f < s and self.position.is_long:
-                self.close(bar.instrument)
+            pos = self.position(bar.instrument_id)
+            if f > s and pos <= 0:
+                self.buy(bar.instrument_id, quantity=10.0)
+            elif f < s and pos > 0:
+                self.sell(bar.instrument_id, quantity=pos)
 
 
-    config = BacktestConfig(
-        universe=nifty50(as_of="2023-01-01"),
+    session = Honba.backtest(
+        SmaCrossover(),
+        symbol="RELIANCE",
         start="2023-01-01",
         end="2024-12-31",
-        initial_capital=1_000_000,
-        cost_model="india_equity_delivery",
-        latency_ms=50,
+        cash=1_000_000,
     )
+    result = session.run()
 
-    node = BacktestNode(config)
-    result = node.run(SmaCrossover)
-
-    print(result.summary())
-    result.tearsheet().save("sma_crossover.html")
+    result.print_report()
 
 ## Running It
 
@@ -58,7 +55,6 @@ Create `first_backtest.py`:
 Expected output:
 
     Backtest: SmaCrossover  (2023-01-01 → 2024-12-31)
-    Universe: NIFTY 50  (50 instruments)
     Initial capital: ₹1,000,000
 
     Trades:     412
@@ -69,26 +65,23 @@ Expected output:
     Max DD:     -11.4%
     Total P&L:  ₹298,450
 
-    Tearsheet saved: sma_crossover.html
-
 ## What Just Happened
 
-The `BacktestNode` ran three stages:
+The backtest session orchestrated:
 
 1. **Cost model** — every fill was charged STT, exchange fees, GST, stamp
-   duty, and a brokerage estimate. For a delivery strategy on NSE, that's
-   roughly 0.14% per side.
-2. **Latency simulation** — each signal was delayed by 50 ms before reaching
-   the matching engine, which is realistic for retail broker APIs.
+   duty, and statutory levies via canonical Indian market costs.
+2. **Next-open fill simulation** — fills execute at next session's open with
+   causal execution timing (ADR 0016).
 3. **Portfolio accounting** — P&L, position tracking, and drawdown were
-   computed bar-by-bar by the engine, not by the strategy.
+   computed bar-by-bar by the engine ledger, not by the strategy.
 
 ## Inspecting the Result
 
-    result.trades           # DataFrame of every fill
+    result.trades           # List of executed fills
     result.equity_curve     # Time series of portfolio value
     result.positions        # Position history
-    result.stats            # Full statistics dictionary
+    result.metrics          # Full statistics dictionary
 
 ## Next Steps
 
@@ -98,21 +91,3 @@ The `BacktestNode` ran three stages:
   latency matters more for intraday than for delivery strategies.
 - **[Statistical Validation](../backtesting/statistical_validation.md)** —
   how to tell if a 1.18 Sharpe is real or lucky.
-- **[Writing Strategies](../strategies/writing_strategies.md)** — the full
-  strategy API.
-
-## A Note on Overfitting
-
-A single backtest is a hypothesis, not a result. Before drawing any conclusion
-from the numbers above, run walk-forward validation and Monte Carlo:
-
-    from honba.algo_analytics import walk_forward, monte_carlo
-
-    wf = walk_forward(node, SmaCrossover, folds=8)
-    mc = monte_carlo(node, SmaCrossover, iterations=1000)
-
-    print(wf.summary())
-    print(mc.confidence_interval(0.95))
-
-The scaffold ships both utilities in `honba-algo-analytics`. They are not
-optional — treat any backtest without them as a preliminary screen only.

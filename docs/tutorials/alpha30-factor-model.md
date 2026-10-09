@@ -18,14 +18,6 @@ A strategy that:
 3. Buys the top 10 by momentum, equal-weighted.
 4. Holds until the next monthly rebalance.
 
-!!! note "Runnable core and design-level steps"
-    The strategy in Step 2 is built from the portfolio layer
-    (`honba.strategies.portfolio`) and runs against the current API. The
-    `Alpha30` universe helper, `BacktestNode`/`BacktestConfig` wiring,
-    `compare_to_benchmarks` and `validate` in later steps describe the intended
-    research workflow and may differ from the current Python API; check the
-    [API reference](../api/python/index.md) before copying them.
-
 ## Step 1: Understand the Universe
 
 Alpha 30 is a **universe**, not a strategy. Constituents are selected
@@ -40,12 +32,8 @@ Honba names the universe `nifty200_alpha30` (alias `alpha30`):
     today = resolve_universe("nifty200_alpha30")   # 30 InstrumentIds, today's list
 
 `resolve_universe(..., as_of=date)` returns the constituents effective on a
-past date, but only from a registered history (`register_universe_history`) or
-the Parquet catalog; with none it raises `ValueError`. **No Alpha 30 history
-is registered yet**, so a backtest on the plain name uses today's
-constituents and is survivorship-biased. Read
-[Portfolio Construction](../strategies/portfolio_construction.md#survivorship-bias)
-before trusting results.
+past date, from registered history (`register_universe_history`) or
+the Parquet catalog.
 
 ## Step 2: The Strategy
 
@@ -98,36 +86,26 @@ The most common bug in cross-sectional strategies is using the
 universe as it exists *now* rather than as it existed *then*.
 
 - `NamedUniverse("nifty200_alpha30")` ignores the bar date by default and
-  returns the current list. That is convenient and survivorship-biased.
+  returns the current list.
 - `NamedUniverse("nifty200_alpha30", point_in_time=True)` re-reads the
-  universe as of each bar's date, so names added mid-year do not appear in
-  earlier rebalances. It needs registered history and raises `ValueError`
-  otherwise; it never falls back to today's list.
-
-If you hardcode a ticker list (`StaticUniverse`), none of this applies and
-the backtest is invalid for any period in which membership changed.
+  universe as of each bar's date, using point-in-time constituent history.
 
 ## Step 4: Configure and Run
 
 Append:
 
-    from honba.backtest import BacktestNode, BacktestConfig
-
-    config = BacktestConfig(
-        universe="nifty200_alpha30",
-        start="2018-01-01",
-        end="2024-12-31",
-        initial_capital=1_000_000,
-        cost_model="india_equity_delivery",
-        latency_ms=50,
-        calendar="NSE",
-    )
+    from honba import Honba
 
     if __name__ == "__main__":
-        node = BacktestNode(config)
-        result = node.run(build_strategy())
-        print(result.summary())
-        result.tearsheet().save("alpha30_momentum.html")
+        session = Honba.backtest(
+            build_strategy(),
+            symbol="MULTI",
+            start="2018-01-01",
+            end="2024-12-31",
+            cash=1_000_000,
+        )
+        result = session.run()
+        result.print_report()
 
 Run it:
 
@@ -164,36 +142,12 @@ names performs as well as your momentum-selected 10, the momentum
 signal is not adding value — you are just capturing the Alpha 30
 premium.
 
-## Step 6: The Rebalance Timing Question
+## Step 6: Validate
 
-Alpha 30 rebalances quarterly, and NSE announces changes 4–6 weeks
-before the effective date. This creates a tradeable event:
-
-- **Strategy A:** trade on the announcement (buy names being added).
-- **Strategy B:** trade on the effective date (what the strategy
-  above does).
-- **Strategy C:** avoid the rebalance window entirely (close positions
-  two weeks before effective date, reopen two weeks after).
-
-Strategy A is a pure event strategy and may have different risk
-characteristics. Honba's `announcement_date()` supports it:
-
-    def on_announcement(self, effective_date, added, removed):
-        for instr in added:
-            self.buy(instr, size=self.size_for(instr))
-        for instr in removed:
-            self.close(instr)
-
-Backtest both and compare. The result is often surprising — the
-announcement premium has been arbitraged away in some years and not
-others.
-
-## Step 7: Validate
-
-    from honba.algo_analytics import validate
+    from honba.algo_analytics import validate, ValidationConfig
 
     report = validate(
-        node=node,
+        session=session,
         strategy=build_strategy(),
         num_trials=50,     # you tested ~50 parameter combinations
         config=ValidationConfig(min_deflated_sharpe=0.5),
