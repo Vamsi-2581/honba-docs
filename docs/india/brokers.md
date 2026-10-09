@@ -25,6 +25,47 @@ traders in India:
 | Upstox | Uplink | OAuth (daily) | **Yes** | Included |
 | Kotak | Kotak Neo | OAuth | No | Included |
 
+## Zerodha Adapter
+
+Zerodha is a **Python adapter only**: the `honba-zerodha` package in
+`honba-adapters/zerodha` (`honba_zerodha`). There is no Rust Zerodha crate in
+the core `honba` workspace any more, and the Kite Connect Rust client
+(`kiteconnect-rs`) is a protocol reference, not a dependency. Like every other
+adapter it implements the `Adapter` facade plus the market-data and execution
+role protocols and is discovered through the adapter registry.
+
+What it covers:
+
+- **Order vocabulary.** Products `CNC`, `MIS` and `NRML` (delivery, intraday,
+  carry); order types market, limit, stop-limit (`SL`) and stop-market
+  (`SL-M`). Trailing stops are not listed.
+- **Time in force: `DAY` and `IOC` only.** Kite has no other validity for
+  regular orders; any other value raises `CapabilityError` before the network
+  is touched.
+- **Whole quantities only.** A fractional quantity is rejected with an
+  `AdapterError` locally, as are non-positive prices and trigger prices.
+- **Order tags.** A `client_order_id` is sent as the Kite `tag`: ASCII
+  alphanumerics only, at most 20 characters (`HONBA` if nothing is left).
+- **Reconciliation of ambiguous submits.** If an order submission fails with a
+  transport error or a rate-limit error, the outcome is unknown, so the
+  `client_order_id` is marked ambiguous. The next `place_order` with the same
+  id first looks for an order carrying that tag (`GET /orders`) and adopts it
+  instead of sending a duplicate. A repeated `client_order_id` otherwise
+  returns the cached report. A Kite refusal comes back as a `REJECTED`
+  `OrderReport`, not an exception.
+- **`poll_fills()`.** Reads the broker's trades and returns the fills of orders
+  this adapter placed or adopted that have not been reported yet,
+  de-duplicated by Kite trade id; phantom rows (non-positive size or price,
+  unparseable timestamp) are skipped. This is the pull path for fills.
+- **KiteTicker binary decoder.** The websocket feed client decodes Kite's
+  binary frames (LTP, quote and full-depth packets; one-byte heartbeats yield
+  nothing; malformed or unknown-length packets raise a typed ticker error) and
+  turns them into Honba quote and trade ticks. A stateful filter reports a
+  trade only when volume strictly increased, because Kite re-sends the same
+  snapshot whenever anything in the packet changes. Stream modes are LTP, quote
+  and depth.
+- **Account reads.** Orders, trades, positions, holdings, funds and margin.
+
 ## The Static IP Requirement
 
 SEBI requires a registered static IP for API-based order placement. This
@@ -46,7 +87,7 @@ execution locally over real market data, does not require a static IP.
 Each broker handles auth differently, and this is the most common source
 of adapter bugs:
 
-- **Zerodha Kite Connect:** OAuth flow with a daily access token
+- **Zerodha Kite Connect (Python adapter):** OAuth flow with a daily access token
   generated from a login redirect. The token expires every morning,
   which is inconvenient for headless systems but is what Kite
   requires.

@@ -50,6 +50,8 @@ nav:
       - strategies/index.md
       - Writing Strategies: strategies/writing_strategies.md
       - Indicators: strategies/indicators.md
+      - Strategy Styles: strategies/strategy_styles.md
+      - Portfolio Construction: strategies/portfolio_construction.md
       - Position Management: strategies/position_management.md
   - India:
       - india/index.md

@@ -87,11 +87,50 @@ moves adversely. Honba supports four stop types:
 
 ### Trailing Stop
 
-    self.trail_stop(
-        "RELIANCE",
-        size=100,
-        trail_amount=50.00,          # ₹50 below the high-water mark
-    )
+A trailing stop follows the market in your favour and never retreats. It is
+the `TRAILING_STOP` order type, built with two `OrderIntent` factories:
+
+    from honba.entities.instrument import InstrumentId
+    from honba.domain.order import OrderIntent
+
+    tcs = InstrumentId("TCS", "NSE")
+
+    # Protect a LONG: SELL stop that trails below the high-water mark.
+    long_stop = OrderIntent.trailing_stop_sell(tcs, 100, trail_percent=3.0)
+
+    # Protect a SHORT: BUY stop that trails above the low-water mark.
+    short_stop = OrderIntent.trailing_stop_buy(tcs, 100, trail_amount=15.0)
+
+    # inside a Strategy callback:  self.submit(long_stop)
+
+Semantics:
+
+| | Long protection | Short protection |
+|---|---|---|
+| Factory | `trailing_stop_sell` | `trailing_stop_buy` |
+| Side | SELL | BUY |
+| Stop level | `trail_amount` (price units) or `trail_percent` below the highest price seen since placement | `trail_amount` or `trail_percent` above the lowest price seen since placement |
+| Moves | up with the market, never down | down with the market, never up |
+| Triggers | when price falls back to the stop; sells at market | when price rallies back to the stop; buys at market |
+
+Give **exactly one** of `trail_amount` (finite, > 0) or `trail_percent`
+(0 < p < 100); giving both or neither raises `ValueError`. A trailing stop
+takes no `price` and no `trigger_price`, and every other order type rejects
+the trail fields.
+
+Trailing stops are **opt-in per adapter**. `AdapterCapabilities` does not
+include `OrderType.TRAILING_STOP` in its default `order_types`; an adapter
+must list it explicitly, and `place_order` raises `CapabilityError` on one
+that does not.
+
+!!! warning "Current status: Python interface only"
+    The order type and factories exist in the Python domain model. There is no
+    Rust or wire-format parity yet, the backtest engine and simulator do not
+    execute trailing stops, and no broker adapter lists `TRAILING_STOP` in its
+    capabilities. Today you can build and validate the intent, and an adapter
+    can opt in, but you cannot backtest or trade one. Until then, emulate a
+    trail by re-submitting a fixed `OrderIntent.stop_sell` at a new level.
+    `DeclarativeStrategy` does not use trailing stops.
 
 Stops are placed as real orders on the simulated exchange, not checked
 in strategy code. This means a stop can trigger on an intrabar move,
@@ -118,6 +157,12 @@ Target orders close a position at a profit:
 
 The engine manages the OCO (one-cancels-other) logic: when either the
 stop or the target fills, the other is cancelled.
+
+!!! note "Declarative strategies"
+    `DeclarativeStrategy` places its protective stop and target as two
+    independent orders and does **not** cancel the survivor when the other
+    fills (a TODO in the code). See
+    [Strategy Styles](strategy_styles.md#known-limitation-no-automatic-oco).
 
 ## Position Tracking
 

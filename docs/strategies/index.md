@@ -10,6 +10,10 @@ response to market events; the strategy responds by placing orders.
   class, lifecycle callbacks, data subscriptions, and order placement.
 - **[Indicators](indicators.md)** — the full indicator catalogue: trend,
   momentum, volatility, volume, and India-specific indicators.
+- **[Strategy Styles](strategy_styles.md)** — event-driven, declarative
+  and portfolio strategies, with a Jesse comparison and when to use each.
+- **[Portfolio Construction](portfolio_construction.md)** — universe,
+  selection, weighting and rebalance schedule, with the `params` grammar.
 - **[Position Management](position_management.md)** — sizing models,
   stop losses, and portfolio construction.
 
