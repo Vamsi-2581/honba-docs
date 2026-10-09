@@ -13,6 +13,16 @@ invalidates the result.
 
 *Last verified: 2026-09-30 against NSE Indices methodology documents.*
 
+!!! note "What the Python API provides today"
+    The Python surface for universes is `honba.markets.india.universes`:
+    `resolve_universe(name, exchange="NSE", as_of=None)`, the built-in names
+    `nifty50` and `nifty200_alpha30` (alias `alpha30`), and the point-in-time
+    helpers `UniverseHistory`, `Constituent`, `register_universe_history`,
+    `save_universe_history` and `load_universe_history`. The `Universe` trait,
+    `Alpha30::nifty100()` and `announcement_date()` sections below describe the
+    intended design; they are not part of the current Python API. See
+    [Using a Universe in a Strategy](#using-a-universe-in-a-strategy).
+
 ## NIFTY 50
 
 The flagship large-cap index. 50 stocks selected from the NIFTY 100
@@ -123,14 +133,41 @@ trade the announcement (a common "index inclusion" strategy).
 
 ## Historical Constituent Data
 
-Honba ships with constituent history from 2015 onward for NIFTY 50,
-BANK NIFTY, and both Alpha 30 variants. The data lives in
-`honba-india/src/universes/data/` as Parquet files with the schema:
+`resolve_universe(name)` with no date returns **today's** list. It is
+survivorship-biased by construction: every name that was delisted or dropped
+along the way is already missing. With `as_of=<date>` it returns the
+constituents effective on that date, from a history registered in the process
+or from the Parquet catalog at `<data root>/constituents/<universe>.parquet`
+(columns `symbol`, `included_from`, `excluded_on`). It never projects today's
+list into the past: with no history it raises `ValueError`.
 
-    effective_date | symbol | weight | announced_date
+    import datetime as dt
+    from honba.markets.india.universes import (
+        Constituent,
+        UniverseHistory,
+        register_universe_history,
+        resolve_universe,
+    )
 
-When NSE publishes a new review, the data file is updated and the
-`honba-india` patch version is bumped.
+    register_universe_history(
+        UniverseHistory(
+            "nifty50",
+            (
+                Constituent("TCS", dt.date(2015, 1, 1)),
+                Constituent("YESBANK", dt.date(2015, 1, 1), dt.date(2020, 3, 19)),
+            ),
+        )
+    )
+    resolve_universe("nifty50", as_of=dt.date(2019, 1, 3))   # TCS and YESBANK
+
+An interval is half-open: the inclusion day counts, the exclusion day does not.
+
+!!! warning "No Alpha 30 history is registered yet"
+    Honba does not ship constituent history for `nifty200_alpha30` (or any
+    other built-in universe) today. `resolve_universe("nifty200_alpha30",
+    as_of=...)` raises `ValueError` until you register or save one. Backtests
+    that use the plain name run on today's 30 constituents and carry
+    survivorship bias; see [Portfolio Construction](../strategies/portfolio_construction.md#survivorship-bias).
 
 ## The Rebalance Event
 
@@ -150,19 +187,33 @@ strategy decides what to do.
 
 Most strategies in practice use an equal-weight portfolio regardless of
 the index's actual weights, because market-cap weights concentrate risk
-in the top few names. Honba supports both:
+in the top few names. For Alpha 30 specifically, equal weight is common
+because the alpha-score tilt is already captured by constituent selection.
 
-    let weights = u.weights_at(date);
-    let equal = equal_weight(&u.constituents_at(date));
+Note the split of responsibilities: the Alpha 30 is a **universe** (who is
+eligible); "equal weight, rebalance periodically" is the **strategy**. In
+Honba the strategy is `PortfolioStrategy` with an `EqualWeight` weighting
+scheme, and the Alpha 30 enters only as a name:
 
-    config = BacktestConfig {
-        universe: u,
-        weighting: Weighting::Equal,      // or Weighting::Index
-        // ...
-    };
+    from honba.strategies.portfolio import EqualWeight, EveryNDays, NamedUniverse, PortfolioStrategy
 
-For Alpha 30 specifically, equal-weight is common because the alpha
-score tilt is already captured by constituent selection.
+    strategy = PortfolioStrategy(
+        NamedUniverse("nifty200_alpha30"), EqualWeight(), EveryNDays(15)
+    )
+
+The catalog strategy `equal_weight`
+(`honba-strategies/portfolio/rebalancing/equal_weight`) is exactly this,
+configured from `config.toml`. See
+[Portfolio Construction](../strategies/portfolio_construction.md).
+
+## Using a Universe in a Strategy
+
+`NamedUniverse(name, exchange="NSE", point_in_time=False)` wraps
+`resolve_universe` for the portfolio layer and `StaticUniverse([...])` wraps a
+fixed list. By default `NamedUniverse` ignores the bar date and returns the
+engine's current list; with `point_in_time=True` it asks for the snapshot
+effective on the bar's UTC date and raises `ValueError` if no history is
+registered.
 
 ## Custom Universes
 

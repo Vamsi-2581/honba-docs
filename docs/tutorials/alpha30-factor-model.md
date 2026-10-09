@@ -12,93 +12,100 @@ portfolio construction.
 
 A strategy that:
 
-1. Runs on the NIFTY100 Alpha 30 universe (30 stocks selected by
+1. Runs on the NIFTY200 Alpha 30 universe (30 stocks selected by
    Jensen's Alpha).
 2. Each month, ranks constituents by trailing 3-month return.
 3. Buys the top 10 by momentum, equal-weighted.
 4. Holds until the next monthly rebalance.
 
+!!! note "Runnable core and design-level steps"
+    The strategy in Step 2 is built from the portfolio layer
+    (`honba.strategies.portfolio`) and runs against the current API. The
+    `Alpha30` universe helper, `BacktestNode`/`BacktestConfig` wiring,
+    `compare_to_benchmarks` and `validate` in later steps describe the intended
+    research workflow and may differ from the current Python API; check the
+    [API reference](../api/python/index.md) before copying them.
+
 ## Step 1: Understand the Universe
 
-Alpha 30 is not a static list. Constituents are selected quarterly
-based on Jensen's Alpha over a trailing 1-year window. A backtest
+Alpha 30 is a **universe**, not a strategy. Constituents are selected
+quarterly based on Jensen's Alpha over a trailing 1-year window. A backtest
 that uses today's list for a 2020 start date will include stocks that
 were not in the index then.
 
-Honba's `Alpha30` implementation handles this automatically:
+Honba names the universe `nifty200_alpha30` (alias `alpha30`):
 
-    from honba.india.universes import Alpha30
-    from datetime import date
+    from honba.markets.india.universes import resolve_universe
 
-    u = Alpha30.nifty100()
+    today = resolve_universe("nifty200_alpha30")   # 30 InstrumentIds, today's list
 
-    # Constituents on a specific date
-    constituents = u.constituents_at(date(2023, 1, 1))
-
-    # Rebalance dates in a range
-    dates = u.rebalance_dates(date(2023, 1, 1), date(2024, 12, 31))
-
-    # When was a rebalance announced?
-    announced = u.announcement_date(date(2023, 3, 31))
-    print(f"Effective 2023-03-31, announced {announced}")
-
-The `announcement_date` is important for strategies that trade the
-index inclusion event.
+`resolve_universe(..., as_of=date)` returns the constituents effective on a
+past date, but only from a registered history (`register_universe_history`) or
+the Parquet catalog; with none it raises `ValueError`. **No Alpha 30 history
+is registered yet**, so a backtest on the plain name uses today's
+constituents and is survivorship-biased. Read
+[Portfolio Construction](../strategies/portfolio_construction.md#survivorship-bias)
+before trusting results.
 
 ## Step 2: The Strategy
 
+"Each month, hold the 10 best trailing-return names of the universe, equal
+weighted" is a composition of universe, selector, weighting and schedule.
 Create `alpha30_momentum.py`:
 
-    from honba.domain import Bar
-    from honba.india.universes import Alpha30
-    from honba.strategies.base import Strategy
-    from honba.strategies.portfolio import EqualWeight
+    from honba.strategies.portfolio import (
+        EqualWeight,
+        MonthlyFirstSession,
+        NamedUniverse,
+        PortfolioStrategy,
+        TopN,
+        momentum,
+    )
 
 
-    class Alpha30Momentum(Strategy):
-        lookback_days: int = 63       # ~3 months
-        top_n: int = 10
-        min_names: int = 5
+    def build_strategy() -> PortfolioStrategy:
+        return PortfolioStrategy(
+            NamedUniverse("nifty200_alpha30"),
+            EqualWeight(),
+            MonthlyFirstSession(),
+            TopN(10, momentum(63)),      # ~3 months of trading days
+            history_len=64,
+            name="alpha30_momentum",
+        )
 
-        def on_start(self):
-            self.universe_obj = Alpha30.nifty100()
-            self.subscribe_bars(self.universe, timeframe="1d")
-            self.portfolio = EqualWeight(universe=self.universe)
-            self.portfolio.rebalance(schedule="monthly", at="first_open")
-            self.risk.add_max_positions(self.top_n)
-            self.risk.add_single_stock_limit(0.15)
+There is no `on_bar` body: at each rebalance the framework re-reads the
+universe, ranks the members by their return over the last 63 closes, keeps
+the top 10, sells names that dropped out, and trims or tops up the rest to
+equal weight in whole shares. `TopN` drops names without 63 closes of history,
+so the first rebalance waits until some names can be scored.
 
-        def on_rebalance(self):
-            # Called on the first trading day of each month
-            scores = {}
-            for instr in self.universe:
-                ret = self.trailing_return(instr, self.lookback_days)
-                if ret is not None:
-                    scores[instr] = ret
+The same strategy as plain params (what a `config.toml` `[params]` table
+holds):
 
-            if len(scores) < self.min_names:
-                self.log.warning("Universe too small, skipping rebalance")
-                return
+    PortfolioStrategy.from_params(
+        {
+            "universe": "nifty200_alpha30",
+            "select": "top:10:momentum:63",
+            "schedule": "monthly:first_session",
+            "history_len": 64,
+        },
+        name="alpha30_momentum",
+    )
 
-            top = sorted(scores, key=scores.get, reverse=True)[:self.top_n]
-            weights = self.portfolio.weights({i: 1.0 for i in top})
-            self.rebalance_to(weights)
-
-The `on_rebalance` callback is triggered by the portfolio scheduler.
-It fires on the first trading day of each month at the open.
-
-## Step 3: Important — Look-Ahead Safety
+## Step 3: Important - Look-Ahead Safety
 
 The most common bug in cross-sectional strategies is using the
-universe as it exists *now* rather than as it existed *then*. Honba
-handles this automatically when you use `Alpha30.nifty100()`:
+universe as it exists *now* rather than as it existed *then*.
 
-- `constituents_at(date)` returns constituents effective on that date.
-- The engine re-reads the universe on every rebalance.
-- Names that were added mid-year do not appear in earlier rebalances.
+- `NamedUniverse("nifty200_alpha30")` ignores the bar date by default and
+  returns the current list. That is convenient and survivorship-biased.
+- `NamedUniverse("nifty200_alpha30", point_in_time=True)` re-reads the
+  universe as of each bar's date, so names added mid-year do not appear in
+  earlier rebalances. It needs registered history and raises `ValueError`
+  otherwise; it never falls back to today's list.
 
-If you were to hardcode a ticker list, none of this would apply and
-the backtest would be invalid.
+If you hardcode a ticker list (`StaticUniverse`), none of this applies and
+the backtest is invalid for any period in which membership changed.
 
 ## Step 4: Configure and Run
 
@@ -107,7 +114,7 @@ Append:
     from honba.backtest import BacktestNode, BacktestConfig
 
     config = BacktestConfig(
-        universe=Alpha30.nifty100(),
+        universe="nifty200_alpha30",
         start="2018-01-01",
         end="2024-12-31",
         initial_capital=1_000_000,
@@ -118,7 +125,7 @@ Append:
 
     if __name__ == "__main__":
         node = BacktestNode(config)
-        result = node.run(Alpha30Momentum)
+        result = node.run(build_strategy())
         print(result.summary())
         result.tearsheet().save("alpha30_momentum.html")
 
@@ -137,7 +144,7 @@ complexity is not justified. Compare against two benchmarks:
         result=result,
         benchmarks=[
             "nifty50_buy_hold",
-            "alpha30_equal_weight_monthly",   # hold all 30, rebalance monthly
+            "equal_weight",                   # catalog strategy: hold all 30 equal-weighted
             "alpha30_top10_random_monthly",   # random top 10
         ],
     )
@@ -149,7 +156,7 @@ Expected shape of the output:
     ─────────────────────────────────────────────────────────
     Alpha30Momentum (top 10)        16.8%   1.14     -17.2%
     NIFTY 50 buy-hold               12.4%   0.82     -22.1%
-    Alpha30 equal-weight monthly    14.1%   0.96     -19.8%
+    Alpha30 equal-weight (catalog)  14.1%   0.96     -19.8%
     Alpha30 top-10 random monthly   11.2%   0.71     -24.6%
 
 The third benchmark is the important one. If a random selection of 10
@@ -187,7 +194,7 @@ others.
 
     report = validate(
         node=node,
-        strategy=Alpha30Momentum,
+        strategy=build_strategy(),
         num_trials=50,     # you tested ~50 parameter combinations
         config=ValidationConfig(min_deflated_sharpe=0.5),
     )
@@ -210,5 +217,6 @@ after testing 50 combinations may be entirely a selection artifact.
 ## Related
 
 - [Universes](../india/universes.md)
+- [Portfolio Construction](../strategies/portfolio_construction.md)
 - [Position Management](../strategies/position_management.md)
 - [Statistical Validation](../backtesting/statistical_validation.md)
