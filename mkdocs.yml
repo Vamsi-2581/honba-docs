@@ -89,6 +89,7 @@ nav:
       - Python SDK (client): api/python-sdk.md
       - Adapters (typed registry): api/adapters.md
       - REST API and serve: api/rest.md
+      - API Reference (generated): api/api-reference.md
   - Internals (mdBook): https://honba-labs.github.io/honba/book/
   - Architecture:
       - architecture/index.md

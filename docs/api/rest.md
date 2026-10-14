@@ -30,37 +30,37 @@ is `listening on http://<addr>` with the address actually bound.
 
 ## Routes
 
-Served (answer with real data):
+All routes below are implemented and return real data (except `/depth/{id}` which returns 404 `market_data_unavailable` over bar datasets):
 
 | Route | Notes |
 |---|---|
 | `GET /health` | `{"status": "ok"}` |
-| `GET /capabilities` | Derived from the endpoint registry; see below |
+| `GET /capabilities` | Derived from the endpoint registry; `not_implemented` list is now empty |
 | `GET /instruments` | Filters `exchange`, `symbol`; id order |
 | `GET /instruments/{id}` | `{id}` is `SYMBOL.EXCHANGE`, split on the last dot |
 | `GET /bars/{id}` | `tf`, `from`, `to`; half-open `[from, to)`, ascending `ts_event` |
 | `GET /quotes` | `symbols` (comma list), `venue`, `as_of` (inclusive) |
-| `GET /depth/{id}` | `depth` 1..=50, default 5 |
+| `GET /depth/{id}` | `depth` 1..=50, default 5 — over bars returns 404 `market_data_unavailable` |
 | `POST /strategies/verify` | Verifies a manifest, returns the IR |
 | `GET /strategies` | Lists compiled strategies of this process, ordered by id |
 | `POST /strategies` | Compiles and stores a manifest; returns its id and IR |
 | `GET /screener/scan` | Evaluates screener filters over the bars; see below |
 | `GET /schema` | Schema info only: `{"openapi": "3.1.0", "version": <API version>}`. The full OpenAPI document is generated, see [Contracts from Rust](../architecture/contracts_from_rust.md) |
-
-**501 `not_implemented`** (in the contract, not built; category `unsupported`):
-
-```text
-POST /backtests           GET /backtests/{id}       GET /backtests/{id}/journal
-POST /sweeps              GET /sweeps/{id}
-GET /orders
-GET /journals/{id}
-```
+| `POST /backtests` | Submits a backtest run, returns `run_id` |
+| `GET /backtests/{id}` | Returns the run result with metrics |
+| `GET /backtests/{id}/journal` | Returns the trade journal for the run |
+| `GET /backtests/{id}/events` | SSE stream of run progress (`text/event-stream`) |
+| `POST /sweeps` | Submits a parameter sweep |
+| `GET /sweeps/{id}` | Returns the sweep report |
+| `POST /orders` | Places an order (risk-gated, ADR 0018) |
+| `GET /orders` | Lists orders |
+| `DELETE /orders/{id}` | Cancels an order |
+| `POST /positions/close` | Closes a position |
+| `GET /journals/{id}` | Returns the journal for a backtest id |
 
 `POST /orders` is risk-gated (ADR 0018): a refusal is a 422 carrying the
 `risk_*` code (category `risk`, not retryable); `DELETE /orders/{id}` cancels
-without a gate and `POST /positions/close` closes without one. Until the write
-ledger of E11-S7 exists, an approved order is acknowledged with 200 and no
-gateway call is made.
+without a gate and `POST /positions/close` closes without one.
 
 A request body that does not parse on these routes is still a 422 first.
 
@@ -68,8 +68,7 @@ A request body that does not parse on these routes is still a 422 first.
 
 The manifest also carries `crates`, `market_packs`, `toolsets`, `adapters` and `features`.
 `endpoints` lists every registry row as `METHOD /path` (for example
-`GET /bars/{id}`). The additive `not_implemented` list names the rows above that
-answer 501. Agents should read it instead of probing.
+`GET /bars/{id}`). The `not_implemented` list is now empty.
 
 ### `GET /screener/scan`
 
@@ -163,7 +162,7 @@ is derived from `code`. Use `retryable`, not the status, to decide on retry.
 - `honba serve --data-dir DIR [--addr ADDR] [--cors-origin ORIGIN]...` as above.
 - `honba verify MANIFEST.json` verifies a strategy manifest and prints the compiled IR as JSON
   (the CLI form of `POST /strategies/verify`).
-- `honba schema export [--output DIR] [--typescript DIR] [--openapi DIR] [--pyi DIR] [--mcp DIR]`
+- `honba schema export [--output DIR] [--typescript DIR] [--client DIR] [--openapi DIR] [--pyi DIR] [--mcp DIR] [--docs DIR]`
   writes the generated contract artifacts; `honba codegen` is an alias that emits every one
   (see [Contracts from Rust](../architecture/contracts_from_rust.md)).
 
