@@ -92,8 +92,11 @@ resolve_universe("nifty50", as_of=dt.date(2019, 1, 3))   # TCS and YESBANK
 
 An interval is half-open: the inclusion day counts, the exclusion day does not.
 
-For Alpha 30, baseline historical constituents are registered via `default_alpha30_history()`
-and can be overridden or extended with custom snapshots.
+For Alpha 30, a baseline is registered via `default_alpha30_history()` and can
+be overridden or extended with custom snapshots. That baseline is **not** real
+index history: it lists today's 30 names, all included from 2005-04-01 with no
+exits, so a point-in-time query for an earlier date still returns today's
+members. Register true constituent intervals before relying on it.
 
 ## Equal Weight vs Market Weight
 

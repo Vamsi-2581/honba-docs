@@ -90,6 +90,15 @@ universe as it exists *now* rather than as it existed *then*.
 - `NamedUniverse("nifty200_alpha30", point_in_time=True)` re-reads the
   universe as of each bar's date, using point-in-time constituent history.
 
+!!! warning "The shipped history is not real history"
+    `point_in_time=True` does not remove survivorship bias on its own. The only
+    history the engine registers (`default_alpha30_history`) stamps today's 30
+    names as members from 2005-04-01 with no exits, so
+    `resolve_universe("nifty200_alpha30", as_of=...)` returns all 30 for any later
+    date, including names listed years afterwards. Register a real history with
+    `register_universe_history` or provide a `constituents/` catalog file before
+    trusting a long backtest. See [Known Issues](../examples/known_issues.md).
+
 ## Step 4: Configure and Run
 
 Append:
