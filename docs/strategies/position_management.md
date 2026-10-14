@@ -1,107 +1,125 @@
 # Position Management
 
-Position sizing determines more of a strategy's outcome than signal
-generation does. A strategy with a mediocre signal and good sizing
-outperforms a strategy with a great signal and fixed-lot sizing.
+Position sizing determines more of a strategy's outcome than signal generation does. A strategy with a mediocre signal and good sizing outperforms a strategy with a great signal and fixed-lot sizing.
 
-Honba provides four sizing models and a portfolio construction layer.
+Honba provides sizing helpers and a portfolio construction layer for multi-instrument strategies.
 
 ## The Sizing Models
 
-Every model answers the same question: given a signal, how many units
-do I trade?
+Every model answers the same question: given a signal, how many units do I trade?
 
 ### 1. Fixed Size
 
-    self.buy("RELIANCE", size=100)
+```python
+self.buy(InstrumentId("RELIANCE", "NSE"), 100)
+```
 
-Fixed size is simple and adequate for research but rarely appropriate
-for production. It ignores price level and volatility entirely.
+Fixed size is simple and adequate for research but rarely appropriate for production. It ignores price level and volatility entirely.
 
 ### 2. Fixed Fractional
 
 Trade a fixed percentage of equity per position:
 
-    size = self.size_fixed_fraction(
-        instrument="RELIANCE",
-        fraction=0.05,              # 5% of equity per position
-    )
-    self.buy("RELIANCE", size=size)
+```python
+from honba.strategies.sizing import whole_shares
 
-This is the most common model in practice. For an equal-weight
-portfolio of N instruments, use `fraction = 1 / N`.
+cash = self.ctx.cash().to_major()
+size = whole_shares(cash, 0.05, bar.close)  # 5% of equity per position
+self.buy(InstrumentId("RELIANCE", "NSE"), size)
+```
+
+This is the most common model in practice. For an equal-weight portfolio of N instruments, use `fraction = 1 / N`.
 
 ### 3. Volatility Scaled
 
-Scale the position so that a fixed move in the underlying produces a
-fixed loss:
+Scale the position so that a fixed move in the underlying produces a fixed loss:
 
-    size = self.size_volatility_scaled(
-        instrument="RELIANCE",
-        risk_per_trade=0.01,         # 1% of equity at risk
-        atr=self.atr[instr].value,
-        stop_multiple=2.0,           # stop is 2 ATR away
-    )
+```python
+from honba.strategies.sizing import whole_shares
 
-With a 2-ATR stop and 1% risk per trade, a losing trade costs 1% of
-equity regardless of the instrument's volatility. This is the model
-used by most systematic CTA-style strategies.
+cash = self.ctx.cash().to_major()
+atr_value = self.atr[iid].value
+if atr_value is not None:
+    risk_amount = cash * 0.01  # 1% of equity at risk
+    stop_distance = 2.0 * atr_value  # stop is 2 ATR away
+    size = whole_shares(risk_amount, 1.0, stop_distance)
+    self.buy(iid, size)
+```
+
+With a 2-ATR stop and 1% risk per trade, a losing trade costs 1% of equity regardless of the instrument's volatility. This is the model used by most systematic CTA-style strategies.
 
 ### 4. Kelly Criterion
 
 For strategies with a known edge, size by Kelly:
 
-    size = self.size_kelly(
-        instrument="RELIANCE",
-        win_rate=0.55,
-        win_loss_ratio=1.8,
-        fraction=0.5,                # half-Kelly (recommended)
-    )
+```python
+from honba.strategies.sizing import whole_shares
 
-Full Kelly maximises long-run growth but produces drawdowns that are
-intolerable in practice. Half-Kelly is the standard compromise: it
-achieves 75% of the growth rate with roughly 50% of the drawdown.
+# Kelly fraction: (win_rate * win_loss_ratio - (1 - win_rate)) / win_loss_ratio
+win_rate = 0.55
+win_loss_ratio = 1.8
+kelly = (win_rate * win_loss_ratio - (1 - win_rate)) / win_loss_ratio
+half_kelly = kelly * 0.5
+
+cash = self.ctx.cash().to_major()
+size = whole_shares(cash, half_kelly, bar.close)
+self.buy(InstrumentId("RELIANCE", "NSE"), size)
+```
+
+Full Kelly maximises long-run growth but produces drawdowns that are intolerable in practice. Half-Kelly is the standard compromise: it achieves 75% of the growth rate with roughly 50% of the drawdown.
 
 ## Stop Losses
 
-A stop loss is a standing order that closes a position if the price
-moves adversely. Honba supports four stop types:
+A stop loss is a standing order that closes a position if the price moves adversely. Honba supports several stop types through `OrderIntent` factories:
 
-### Fixed Stop
+### Fixed Stop (Stop-Market)
 
-    self.sell_stop("RELIANCE", size=100, stop=2400.00)
+```python
+from honba.entities.order import OrderIntent
+from honba.entities.instrument import InstrumentId
+
+iid = InstrumentId("RELIANCE", "NSE")
+self.ctx.submit(OrderIntent.stop_sell(iid, 100, 2400.00))
+```
 
 ### Percentage Stop
 
-    self.sell_stop(
-        "RELIANCE", size=100,
-        stop=self.position("RELIANCE").avg_price * 0.95,   # 5% below entry
-    )
+```python
+pos = self.ctx.position(iid)
+if pos > 0:
+    entry_price = pos.avg_price  # Note: position() returns float, use ctx for details
+    stop_price = entry_price * 0.95  # 5% below entry
+    self.ctx.submit(OrderIntent.stop_sell(iid, pos, stop_price))
+```
 
 ### ATR Stop
 
-    self.sell_stop(
-        "RELIANCE", size=100,
-        stop=bar.close - self.stop_atr_multiple * self.atr["RELIANCE"].value,
-    )
+```python
+atr_val = self.atr[iid].value
+if atr_val is not None:
+    stop_price = bar.close - 2.0 * atr_val
+    self.ctx.submit(OrderIntent.stop_sell(iid, 100, stop_price))
+```
 
 ### Trailing Stop
 
-A trailing stop follows the market in your favour and never retreats. It is
-the `TRAILING_STOP` order type, built with two `OrderIntent` factories:
+A trailing stop follows the market in your favour and never retreats. It is the `TRAILING_STOP` order type, built with two `OrderIntent` factories:
 
-    from honba.entities.instrument import InstrumentId
-    from honba.domain.order import OrderIntent
+```python
+from honba.entities.instrument import InstrumentId
+from honba.entities.order import OrderIntent
 
-    tcs = InstrumentId("TCS", "NSE")
+iid = InstrumentId("TCS", "NSE")
 
-    # Protect a LONG: SELL stop that trails below the high-water mark.
-    long_stop = OrderIntent.trailing_stop_sell(tcs, 100, trail_percent=3.0)
+# Protect a LONG: SELL stop that trails below the high-water mark.
+long_stop = OrderIntent.trailing_stop_sell(iid, 100, trail_percent=3.0)
 
-    # Protect a SHORT: BUY stop that trails above the low-water mark.
-    short_stop = OrderIntent.trailing_stop_buy(tcs, 100, trail_amount=15.0)
+# Protect a SHORT: BUY stop that trails above the low-water mark.
+short_stop = OrderIntent.trailing_stop_buy(iid, 100, trail_amount=15.0)
 
-    # inside a Strategy callback:  self.submit(long_stop)
+# Inside a Strategy callback:
+self.ctx.submit(long_stop)
+```
 
 Semantics:
 
@@ -113,223 +131,244 @@ Semantics:
 | Moves | up with the market, never down | down with the market, never up |
 | Triggers | when price falls back to the stop; sells at market | when price rallies back to the stop; buys at market |
 
-Give **exactly one** of `trail_amount` (finite, > 0) or `trail_percent`
-(0 < p < 100); giving both or neither raises `ValueError`. A trailing stop
-takes no `price` and no `trigger_price`, and every other order type rejects
-the trail fields.
+Give **exactly one** of `trail_amount` (finite, > 0) or `trail_percent` (0 < p < 100); giving both or neither raises `ValueError`. A trailing stop takes no `price` and no `trigger_price`, and every other order type rejects the trail fields.
 
-Trailing stops are **opt-in per adapter**. `AdapterCapabilities` does not
-include `OrderType.TRAILING_STOP` in its default `order_types`; an adapter
-must list it explicitly, and `place_order` raises `CapabilityError` on one
-that does not.
+Trailing stops are **opt-in per adapter**. `AdapterCapabilities` does not include `OrderType.TRAILING_STOP` in its default `order_types`; an adapter must list it explicitly, and `place_order` raises `CapabilityError` on one that does not.
 
 !!! warning "Current status: Python interface only"
-    The order type and factories exist in the Python domain model. There is no
-    Rust or wire-format parity yet, the backtest engine and simulator do not
-    execute trailing stops, and no broker adapter lists `TRAILING_STOP` in its
-    capabilities. Today you can build and validate the intent, and an adapter
-    can opt in, but you cannot backtest or trade one. Until then, emulate a
-    trail by re-submitting a fixed `OrderIntent.stop_sell` at a new level.
-    `DeclarativeStrategy` does not use trailing stops.
+    The order type and factories exist in the Python domain model. There is no Rust or wire-format parity yet, the backtest engine and simulator do not execute trailing stops, and no broker adapter lists `TRAILING_STOP` in its capabilities. Today you can build and validate the intent, and an adapter can opt in, but you cannot backtest or trade one. Until then, emulate a trail by re-submitting a fixed `OrderIntent.stop_sell` at a new level. `DeclarativeStrategy` does not use trailing stops.
 
-Stops are placed as real orders on the simulated exchange, not checked
-in strategy code. This means a stop can trigger on an intrabar move,
-which is how stops work in live trading.
+Stops are placed as real orders on the simulated exchange, not checked in strategy code. This means a stop can trigger on an intrabar move, which is how stops work in live trading.
 
-**Important:** in a backtest, a stop order can only fill if the price
-actually trades at the stop level. If your data is end-of-day bars and
-the stop price falls between two bars, the stop will not trigger. This
-is realistic; do not expect the backtest to fill stops that did not
-occur.
+**Important:** in a backtest, a stop order can only fill if the price actually trades at the stop level. If your data is end-of-day bars and the stop price falls between two bars, the stop will not trigger. This is realistic; do not expect the backtest to fill stops that did not occur.
 
 ## Target Orders
 
-Target orders close a position at a profit:
+Target orders close a position at a profit. There is no `bracket()` convenience method; submit the entry, stop and target as separate intents:
 
-    self.bracket(
-        instrument="RELIANCE",
-        side="buy",
-        size=100,
-        entry=2450.00,
-        stop=2400.00,
-        target=2550.00,
-    )
+```python
+iid = InstrumentId("RELIANCE", "NSE")
 
-The engine manages the OCO (one-cancels-other) logic: when either the
-stop or the target fills, the other is cancelled.
+# Entry
+self.ctx.submit(OrderIntent.market_buy(iid, 100))
+
+# Stop-loss (after entry fill, in on_fill)
+self.ctx.submit(OrderIntent.stop_sell(iid, 100, 2400.00))
+
+# Take-profit (after entry fill, in on_fill)
+self.ctx.submit(OrderIntent.limit_sell(iid, 100, 2550.00))
+```
+
+The engine does **not** manage OCO (one-cancels-other) logic automatically. When either the stop or the target fills, the other remains active unless you cancel it.
 
 !!! note "Declarative strategies"
-    `DeclarativeStrategy` places its protective stop and target as two
-    independent orders and does **not** cancel the survivor when the other
-    fills (a TODO in the code). See
-    [Strategy Styles](strategy_styles.md#known-limitation-no-automatic-oco).
+    `DeclarativeStrategy` places its protective stop and target as two independent orders and does **not** cancel the survivor when the other fills (a TODO in the code). See [Strategy Styles](strategy_styles.md#known-limitation-no-automatic-oco).
 
 ## Position Tracking
 
-    pos = self.position("RELIANCE")
-    pos.size             # signed quantity (positive = long)
-    pos.avg_price        # average entry price
-    pos.unrealized_pnl   # mark-to-market P&L
-    pos.realized_pnl     # P&L from closed portions
-    pos.is_long
-    pos.is_short
-    pos.is_flat
+```python
+pos_qty = self.ctx.position(iid)           # Signed quantity (positive = long)
+positions = self.ctx.positions()           # dict of all non-flat positions
+cash = self.ctx.cash()                     # Available cash as Money
+cash_major = cash.to_major()               # Cash as float
+```
+
+The `Position` object with `avg_price`, `unrealized_pnl`, `is_long`, etc. is not directly exposed on `StrategyContext`. Use `ctx.position()` for the signed quantity and track entry prices yourself if needed.
 
 For portfolio-level queries:
 
-    self.total_exposure()             # sum of |position value|
-    self.net_exposure()               # long value - short value
-    self.gross_exposure()             # long + short value
-    self.leverage()                   # gross exposure / equity
+```python
+value = cash_major
+for iid, qty in self.ctx.positions().items():
+    price = self._last_prices.get(iid)  # Track last price in on_bar
+    if price:
+        value += qty * price
+
+total_exposure = sum(abs(qty) * price for iid, (qty, price) in ...)
+net_exposure = sum(qty * price for ...)
+gross_exposure = sum(abs(qty) * price for ...)
+leverage = gross_exposure / value if value > 0 else 0
+```
 
 ## Portfolio Construction
 
-For multi-instrument strategies, the portfolio layer handles
-allocation across positions:
+For multi-instrument strategies, the portfolio layer handles allocation across positions. See [Portfolio Construction](portfolio_construction.md) for the full `PortfolioStrategy` API.
 
-    from honba.strategies.portfolio import EqualWeight, RiskParity, MeanVariance
+```python
+from honba.strategies.portfolio import (
+    EqualWeight, InverseVolatility, EveryNDays, MonthlyFirstSession,
+    NamedUniverse, PortfolioStrategy, TopN, momentum
+)
 
-    # Equal weight across N instruments
-    self.portfolio = EqualWeight(universe=self.universe)
+# Equal weight across N instruments
+strategy = PortfolioStrategy(
+    NamedUniverse("nifty50"),
+    EqualWeight(),
+    EveryNDays(15),
+    allocation=0.98,
+    name="equal_weight",
+)
 
-    # Risk parity: each instrument contributes equal volatility
-    self.portfolio = RiskParity(
-        universe=self.universe,
-        lookback_days=60,
-    )
+# Risk parity: each instrument contributes equal volatility
+strategy = PortfolioStrategy(
+    NamedUniverse("nifty200_alpha30"),
+    InverseVolatility(30),
+    MonthlyFirstSession(),
+    history_len=64,
+    name="inverse_vol",
+)
 
-    # Mean-variance (Markowitz) with shrinkage
-    self.portfolio = MeanVariance(
-        universe=self.universe,
-        lookback_days=252,
-        shrinkage=0.1,
-        max_weight=0.1,
-    )
+# Top-10 momentum with a drift band
+from honba.strategies.portfolio import AnyOf, DriftBand
 
-Then in `on_bar`:
+strategy = PortfolioStrategy(
+    NamedUniverse("nifty50"),
+    EqualWeight(),
+    AnyOf(MonthlyFirstSession(), DriftBand(0.05)),
+    TopN(10, momentum(126)),
+    history_len=126,
+    name="nifty50_top10_momentum",
+)
+```
 
-    def on_bar_universe(self, bars):
-        signals = {i: self.signal(i, bars[i]) for i in bars}
-        target_weights = self.portfolio.weights(signals)
-        self.rebalance_to(target_weights)
-
-`rebalance_to` computes the orders needed to move from the current
-positions to the target weights and submits them, respecting the
-configured cost model and minimum trade size.
+These strategies use `TargetWeightStrategy` under the hood, which:
+- Values the portfolio (cash + open positions at the last close)
+- Sizes each name to `value * allocation * weight` in whole shares
+- Submits market orders: first exits (held names with weight 0), then trims (sells), then top-ups / entries (buys), each group in symbol order
+- Skips busy or unpriced names and ignores differences under one share
 
 ## Rebalancing Frequency
 
-    self.portfolio.rebalance(schedule="weekly")   # Monday open
-    self.portfolio.rebalance(schedule="monthly")  # 1st trading day
-    self.portfolio.rebalance(schedule="quarterly")
-    self.portfolio.rebalance(schedule="threshold", threshold=0.05)
+```python
+# Calendar rebalancing
+EveryNDays(15)              # Every 15 trading days
+MonthlyFirstSession()       # First bar of each UTC calendar month
 
-Threshold rebalancing trades only when target weights drift more than
-`threshold` from current weights. This reduces turnover and cost, and is
-usually superior to calendar rebalancing.
+# Drift-based rebalancing
+DriftBand(0.05)             # When max weight gap reaches 5%
 
-## Maximum Positions
+# Combined
+AnyOf(MonthlyFirstSession(), DriftBand(0.05))
+```
 
-    self.risk.add_max_positions(20)
+Threshold rebalancing trades only when target weights drift more than `threshold` from current weights. This reduces turnover and cost, and is usually superior to calendar rebalancing.
 
-The engine rejects new orders when the position limit is reached. This
-is preferable to a strategy-level check because it applies uniformly
-across all orders, including stops and targets.
+## Risk Controls
 
-## Diversification Constraints
+Risk is enforced by the **runner** (via `RiskStage`), not by strategy code. Pass a risk stage when constructing the runner:
 
-    self.risk.add_sector_limit(
-        max_pct=0.30,
-        sector_lookup="nse_sector_map",
-    )
+```python
+from honba.risk import RiskLimits, RiskStage
+from honba.strategies.runner import StrategyRunner
 
-    self.risk.add_single_stock_limit(max_pct=0.10)
+limits = RiskLimits()
+limits.max_notional = 10_000_000
+limits.max_positions = 20
+limits.max_leverage = 2.0
+# ... other limits
 
-    self.risk.add_correlated_group_limit(
-        groups={"banks": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK"]},
-        max_pct=0.25,
-    )
+stage = RiskStage(limits)
+runner = StrategyRunner(strategy, execution_port, risk=stage, risk_limits=limits)
+```
 
-These are enforced by the engine during order placement.
+The runner checks every order against the risk limits before submitting to the execution port. A refusal never reaches the port and is audited.
+
+Available limits (see `honba.risk.RiskLimits`):
+- `max_notional` — maximum order notional
+- `max_positions` — maximum concurrent positions
+- `max_leverage` — maximum portfolio leverage
+- `max_daily_loss` — maximum daily loss (on breach: reject orders)
+- `max_drawdown` — maximum portfolio drawdown (on breach: reduce leverage or reject)
+- `max_position_value` — per-instrument maximum position value
+- `sector_limits` — per-sector maximum allocation
+- `single_stock_limit` — per-stock maximum allocation
+- `correlated_group_limits` — correlated group maximum allocation
+
+These are enforced by the runner during order submission, not by strategy callbacks.
 
 ## Drawdown Control
 
-    self.risk.add_max_drawdown(
-        pct=0.20,
-        on_breach="reduce_leverage",   # or "close_all" or "stop"
-    )
+Drawdown is measured on total portfolio equity (cash + marked positions). Configure it in `RiskLimits` and the runner will enforce it.
 
-The engine tracks running equity and reduces leverage (or closes all
-positions) when the drawdown threshold is breached. This is a
-portfolio-level control, not a per-strategy one — the drawdown is
-measured on total equity.
+## Multi-Account Execution
 
-## Position Merging Across Accounts
+Honba supports multi-account execution where the same strategy runs across multiple broker accounts. The engine merges target positions before submitting to avoid self-trading:
 
-Honba supports multi-account execution, where the same strategy runs
-across multiple broker accounts (for example, a joint account and an
-HUF account). The engine merges target positions before submitting to
-avoid self-trading:
+```toml
+[execution]
+accounts = ["primary", "huf"]
+merge_targets = true
+```
 
-    [execution]
-    accounts = ["primary", "huf"]
-    merge_targets = true
-
-This is a WonderTrader-inspired feature. Without merging, two accounts
-running the same strategy would place opposing orders that cancel each
-other out on the exchange, incurring cost for no net position change.
+This is a WonderTrader-inspired feature. Without merging, two accounts running the same strategy would place opposing orders that cancel each other out on the exchange, incurring cost for no net position change.
 
 ## A Complete Example
 
-    from honba.strategies.base import Strategy
-    from honba.strategies.indicators import SMA, ATR
-    from honba.strategies.portfolio import RiskParity
+```python
+from honba.entities.bar import Bar
+from honba.entities.instrument import InstrumentId
+from honba.strategies.base import Strategy, Parameter
+from honba.strategies.indicators import SMA, ATR
+from honba.entities.order import OrderIntent
+from honba.strategies.sizing import whole_shares
 
 
-    class MomentumPortfolio(Strategy):
-        lookback: int = 60
-        top_n: int = 10
-        rebalance_freq: str = "weekly"
+class MomentumPortfolio(Strategy):
+    name = "momentum_portfolio"
+    lookback = Parameter(default=60, min=20, max=252, step=10)
+    top_n = Parameter(default=10, min=5, max=30, step=5)
+    rebalance_days = Parameter(default=15, min=5, max=60, step=5)
+    risk_per_trade = Parameter(default=0.01, min=0.005, max=0.03, step=0.005)
+    stop_atr_multiple = Parameter(default=2.0, min=1.0, max=4.0, step=0.5)
 
-        def on_start(self):
-            self.subscribe_bars(self.universe, timeframe="1d")
-            self.portfolio = RiskParity(
-                universe=self.universe,
-                lookback_days=self.lookback,
-            )
-            self.atr = {i: ATR(14) for i in self.universe}
-            self.risk.add_max_positions(self.top_n)
-            self.risk.add_single_stock_limit(0.15)
-            self.risk.add_max_drawdown(
-                pct=0.20, on_breach="reduce_leverage",
-            )
-            self.portfolio.rebalance(schedule=self.rebalance_freq)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sma: dict[InstrumentId, SMA] = {}
+        self.atr: dict[InstrumentId, ATR] = {}
+        self._rebalance_counter = 0
 
-        def on_bar_universe(self, bars):
-            signals = {}
-            for instr, bar in bars.items():
-                ret = self.trailing_return(instr, self.lookback)
-                signals[instr] = ret if ret is not None else 0.0
+    def on_start(self):
+        for iid in self.universe:
+            self.sma[iid] = SMA(self.lookback)
+            self.atr[iid] = ATR(14)
 
-            top = sorted(signals, key=signals.get, reverse=True)[:self.top_n]
-            target_weights = self.portfolio.weights({i: 1.0 for i in top})
-            self.rebalance_to(target_weights)
+    def on_bar(self, bar: Bar):
+        iid = bar.instrument_id
+        sma_val = self.sma[iid].update(bar.close)
+        atr_val = self.atr[iid].update(bar.high, bar.low, bar.close)
 
-        def on_stop(self):
-            self.log.info("Final equity", equity=self.equity)
+        if sma_val is None or atr_val is None:
+            return
+
+        pos = self.position(iid)
+
+        # Simple momentum: price above SMA = long
+        if bar.close > sma_val and pos == 0 and not self.busy(iid):
+            cash = self.ctx.cash().to_major()
+            size = whole_shares(cash * self.risk_per_trade, 1.0, atr_val * self.stop_atr_multiple)
+            if size > 0:
+                self.buy(iid, size)
+                self.ctx.submit(
+                    OrderIntent.stop_sell(iid, size, bar.close - self.stop_atr_multiple * atr_val)
+                )
+        elif bar.close < sma_val and pos > 0:
+            self.sell(iid, pos)
+
+    def on_stop(self):
+        self.log_event("INFO", "Final equity", equity=self.ctx.cash().to_major())
+        # Note: intents submitted here are discarded (run is over).
+```
 
 This strategy:
-
-- Ranks the universe by trailing return
-- Selects the top 10 momentum names
-- Allocates risk-parity weights across them
-- Rebalances weekly
-- Enforces a 15% single-stock cap and 20% max drawdown
-- Reduces leverage (rather than closing all) when drawdown triggers
+- Ranks the universe by trailing return (simplified: price > SMA)
+- Selects top names implicitly via per-instrument signals
+- Sizes positions using volatility-scaled sizing (ATR-based)
+- Places stop-loss orders after entry
+- Uses `Parameter` descriptors for sweepable hyperparameters
 
 ## Next Steps
 
-- **[Three-Tier Pipeline](../backtesting/three_tier_pipeline.md)** —
-  how to validate these strategies rigorously.
-- **[Cost Modeling](../backtesting/cost_modeling.md)** — why
-  rebalancing frequency is a cost decision, not just a signal decision.
+- **[Strategy Styles](strategy_styles.md)** — event-driven, declarative and portfolio strategies.
+- **[Portfolio Construction](portfolio_construction.md)** — universe, selection, weighting and rebalance schedule.
+- **[Three-Tier Pipeline](../backtesting/three_tier_pipeline.md)** — how to validate these strategies rigorously.
+- **[Cost Modeling](../backtesting/cost_modeling.md)** — why rebalancing frequency is a cost decision, not just a signal decision.

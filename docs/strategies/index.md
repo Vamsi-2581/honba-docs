@@ -94,15 +94,20 @@ section before relying on a strategy.
 
 If you have written a Honba strategy before, this is the entire API:
 
-    class MyStrategy(Strategy):
-        def on_start(self):
-            self.subscribe_bars(self.universe, timeframe="1d")
+```python
+from honba.entities.instrument import InstrumentId
+from honba.strategies.base import Strategy
 
-        def on_bar(self, bar):
-            if self.signal(bar):
-                self.buy(bar.instrument, size=self.size(bar))
 
-Everything else in these documents is elaboration.
+class MyStrategy(Strategy):
+    name = "my_strategy"
+
+    def on_bar(self, bar):
+        if self.signal(bar):
+            self.buy(bar.instrument_id, self.size(bar))
+```
+
+Everything else in these documents is elaboration. Subscriptions are declared in the run config (e.g., `config.toml`), not in `on_start`.
 
 ## What Makes a Good Strategy
 
@@ -131,7 +136,7 @@ instruments on minute bars, it is not.
 The engine mitigates this by:
 
 - Aggregating bars in Rust before the Python callback.
-- Caching all state in Rust, so `self.last_price(instr)` is O(1).
+- Caching all state in the runner's ledger, so `self.ctx.position()` and `self.ctx.cash()` are O(1).
 - Exposing indicators as Rust objects behind Python wrappers.
 
 The remaining Python overhead is the callback body itself. Keep it
