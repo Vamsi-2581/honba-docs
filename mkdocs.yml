@@ -75,6 +75,7 @@ nav:
       - Cost Modeling: backtesting/cost_modeling.md
       - Latency Modeling: backtesting/latency_modeling.md
       - Three-Tier Pipeline: backtesting/three_tier_pipeline.md
+      - Pitfalls in Examples: backtesting/pitfalls_in_examples.md
   - Tutorials:
       - tutorials/index.md
       - First NIFTY50 Strategy: tutorials/first-nifty50-strategy.md
@@ -84,6 +85,7 @@ nav:
       - Autoresearch Loop: tutorials/autoresearch-loop.md
   - Examples:
       - examples/index.md
+      - Known Issues: examples/known_issues.md
   - API:
       - Python: api/python/index.md
       - Python SDK (client): api/python-sdk.md
