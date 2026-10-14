@@ -53,9 +53,11 @@ nav:
       - Strategy Styles: strategies/strategy_styles.md
       - Portfolio Construction: strategies/portfolio_construction.md
       - Position Management: strategies/position_management.md
+      - Step Manifests and Chaining: strategies/step_manifests_and_chaining.md
   - India:
       - india/index.md
       - Brokers: india/brokers.md
+      - Adapter Configuration: india/adapter_configuration.md
       - Options: india/options.md
       - Mutual Funds: india/mutual_funds.md
       - Universes: india/universes.md

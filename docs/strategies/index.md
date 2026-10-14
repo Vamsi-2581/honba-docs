@@ -16,6 +16,35 @@ response to market events; the strategy responds by placing orders.
   selection, weighting and rebalance schedule, with the `params` grammar.
 - **[Position Management](position_management.md)** — sizing models,
   stop losses, and portfolio construction.
+- **[Step Manifests and Chaining](step_manifests_and_chaining.md)** — the
+  `step.toml` manifest, the screen/filter/size/execute stage model and the
+  chain validator.
+
+## The Strategy Catalog
+
+The community catalog lives in the `honba-strategies` repository, grouped by
+category and sub-category without numeric prefixes
+(`momentum/trend/sma_crossover`, `mean_reversion/oscillator/rsi_oversold`,
+`universe/alpha/momentum`). Each strategy directory has `strategy.py`,
+`config.toml`, `README.md`, `tests/` and `backtest_result.json`.
+
+`registry.json` indexes the catalog. Every entry has exactly the keys `name`,
+`category`, `path`, `description` and `tags`; `tags` are indicator families
+(`moving_average`, `trend`, `momentum`, `volatility`, `volume`,
+`support_resistance`, `breadth`, `statistical`). The `name` is what
+`load_named` resolves, and it can differ from the strategy's runtime id: the
+registry entry `equal_weight` runs as `equal_weight_rebalance`.
+
+Today the registry holds 17 strategies. A further 24 directories are
+placeholders with a docstring-only `strategy.py`; they are not registered and
+carry `status = "scaffold"` in their `config.toml`. Do not treat a scaffold as
+an implemented strategy. Every registered strategy also has a `step.toml`; see
+[Step Manifests and Chaining](step_manifests_and_chaining.md).
+
+!!! warning "sma_crossover defaults"
+    `sma_crossover` has two sets of defaults. The code (`Parameter()`
+    declarations) defaults to fast 10 and slow 30; its `config.toml` sets 20
+    and 50. Pass the periods explicitly if the difference matters to you.
 
 ## The Three-Line Version
 
