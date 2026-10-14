@@ -190,3 +190,7 @@ miss the best entry points.
 
 - [Mutual Funds](../india/mutual_funds.md)
 - [Cost Model](../india/cost_model.md)
+- [Examples](../examples/index.md): `honba-examples` also has a SIP on a listed
+  instrument (`backtesting/08_sip_buy_and_hold.py`) and a screener-to-SIP chain
+  (`backtesting/10_chained_screener_and_sip.py`).
+- [Step Manifests and Chaining](../strategies/step_manifests_and_chaining.md)
