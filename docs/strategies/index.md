@@ -19,6 +19,8 @@ response to market events; the strategy responds by placing orders.
 - **[Step Manifests and Chaining](step_manifests_and_chaining.md)** — the
   `step.toml` manifest, the screen/filter/size/execute stage model and the
   chain validator.
+- **[Pitfalls in the Examples and the Catalog](../backtesting/pitfalls_in_examples.md)**
+  — the convention that every example and strategy documents its failure modes.
 
 ## The Strategy Catalog
 
@@ -45,6 +47,48 @@ an implemented strategy. Every registered strategy also has a `step.toml`; see
     `sma_crossover` has two sets of defaults. The code (`Parameter()`
     declarations) defaults to fast 10 and slow 30; its `config.toml` sets 20
     and 50. Pass the periods explicitly if the difference matters to you.
+
+## README convention: Usage, Possible output, Pitfalls
+
+Every registered strategy README has the same three sections, and
+`test_readme_sections.py` in `honba-strategies` fails when one is missing or too
+short:
+
+- **Usage**: a snippet that runs from the repo root with `honba` installed
+  (load by registry name, run through `honba.strategies.testing.replay`).
+- **Possible output**: what that snippet actually prints. Metrics from
+  `backtest_result.json` are quoted only when its `status` is `completed`.
+- **Pitfalls**: at least 3 bullets specific to the strategy's code and config,
+  linking the generic
+  [avoiding backtest biases](https://honba-labs.github.io/honba/book/backtesting/avoiding_backtest_biases.html)
+  page.
+
+Each `step.toml` also carries an optional `pitfalls` array of 2 to 4 short
+strings; see [Step Manifests and Chaining](step_manifests_and_chaining.md).
+Scaffolds are not registered, but their README keeps the same headings and says
+`Status: scaffold`. The convention and an index of trap classes are on
+[Pitfalls in the Examples and the Catalog](../backtesting/pitfalls_in_examples.md).
+
+## Honest caveats in the catalog
+
+These come from the strategy READMEs' own Pitfalls sections. Read the full
+section before relying on a strategy.
+
+| Strategy | Caveat |
+|---|---|
+| `vwap_reversion` | Intraday only. There is no minimum-bars-into-session guard, so the VWAP band is near zero at the open and a first-bar close slightly below hlc3 can trade (a BUY at 09:15 in the README's check). There is no stop, and no cap on same-session re-entries. |
+| `turtle_20`, `kdj_cross` | The ATR stop is not a resting order. The strategy checks `bar.low <= stop` after the bar completes and sells at the close (or the next open with `fill_delay=1`), so a gap makes the realised loss larger than `atr_mult * ATR`. `turtle_20` is also a simplified Turtle (no ATR-unit sizing, no pyramiding). |
+| `rsi2_connors`, `ifr2` | No stop and no time exit. A position is held until the exit condition fires, so one trade can lose a lot while the win rate stays high; look at the worst trade and the drawdown. `ifr2` also drops the Hilbert trend-mode filter of its source. |
+| `alpha30_factor`, `alpha30_quality` | The names are misleading. Neither ranks or reads factor or fundamental data: both hold all 30 members at equal weight, so they are `equal_weight` with a different allocation or cadence. Do not read their results as evidence for a factor. |
+| All `alpha30_*` and `equal_weight` on `nifty200_alpha30` | `point_in_time = true` does not remove survivorship bias yet. The only history the engine registers (`default_alpha30_history`) stamps today's 30 names as included from 2005-04-01 with no exits, so `resolve_universe("nifty200_alpha30", as_of=...)` returns all 30 for any date after that, including names listed years later. Register a real history with `register_universe_history` or provide a `constituents/` catalog file. |
+| `sma_crossover` | Code defaults are fast 10 / slow 30; `config.toml` uses 20 / 50 (see the warning above). |
+| Every single-instrument strategy | `replay(fill_delay=0)` fills at the signal bar's close and charges no costs. Use `fill_delay=1` or the engine's next-open execution, and run with the cost pack on. |
+
+!!! warning "Catalog backtest results"
+    `backtest_result.json` files do not always record the data, universe
+    snapshot or cost model behind them. A strategy README says so when that is
+    the case. Treat the numbers as a record that the code ran, not as evidence of
+    an edge.
 
 ## The Three-Line Version
 

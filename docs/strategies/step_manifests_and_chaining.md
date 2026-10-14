@@ -65,6 +65,7 @@ Points that are easy to get wrong:
 | `kind` | `screen`, `filter`, `signal`, `size`, `risk` or `execute`. |
 | `title`, `description`, `tags` | Display text and free-form semantic tags. These are not the indicator-family tags in `registry.json`. |
 | `[params.<name>]` | One table per parameter: `type` (`int`, `float`, `bool`, `str`, `enum`, `date`, `symbols`, `window`), `default`, `min`/`max`/`step`, `choices`, `pattern`, `description`, `sweepable`. `optional = true` means no default and the param may be omitted. |
+| `pitfalls` | Optional array of short one-line warnings (overfitting, lookahead, cost sensitivity) that a GUI can show when the step is added to a chain. See below. |
 | `[requires]` | What the step **looks at**: `bars`, `fundamentals`, `indicators`, `history_bars`, `pit` (needs point-in-time data). An indicator argument or `history_bars` may be `"$param"` to bind it to a step param. |
 | `[consumes]` | `shape` (string or list) and `columns` needed from the previous step. |
 | `[emits]` | `shape`, `adds` (columns appended), `report` (always shown), `reportable` (extra columns a user may ask for). |
@@ -73,6 +74,26 @@ Points that are easy to get wrong:
 The schema is `honba-strategies/schema/step.schema.json` (JSON Schema, draft
 2020-12). It is separate from `honba.strategies.manifest.StrategyManifest`,
 which is the runtime manifest (subscriptions, warm-up) used by the engine.
+
+## Pitfalls in a manifest
+
+`pitfalls` is the short form of a strategy README's `## Pitfalls` section. The
+schema only requires non-empty, unique strings; `test_readme_sections.py` goes
+further for registered strategies and requires 2 to 4 strings of 10 to 160
+characters each. The README keeps the long form and must link the generic bias
+page.
+
+```toml
+pitfalls = [
+  "Tuned fast/slow pairs overfit; validate walk-forward or out-of-sample.",
+  "Decides on the bar close; fill at the next open, not the same close.",
+  "Whipsaws in sideways markets; lags trend turns.",
+]
+```
+
+The field is optional for a manifest in general, but every registered
+catalog strategy carries it. See
+[Pitfalls in the Examples and the Catalog](../backtesting/pitfalls_in_examples.md).
 
 ## Looks at versus reports
 
@@ -160,6 +181,12 @@ The validator is found through `$HONBA_STRATEGIES_DIR` or the sibling
 - `alpha30_factor` and `alpha30_quality` do no ranking: they keep every member
   of the universe and weight equally. Use `alpha30_momentum`, `alpha30_low_vol`
   or `alpha30_mean_reversion` for ranked selection.
+- `point_in_time = true` on the Alpha 30 strategies does not remove survivorship
+  bias: the shipped history is today's 30 names stamped from 2005-04-01.
+- Other per-strategy caveats (`vwap_reversion` trading the first bar and having
+  no stop, `turtle_20` and `kdj_cross` stops checked after the bar,
+  `rsi2_connors` and `ifr2` having no stop) are listed in the
+  [Strategies index](index.md#honest-caveats-in-the-catalog).
 - The Graham and net-net screeners in `honba-examples` are not pipeline steps
   yet.
 
