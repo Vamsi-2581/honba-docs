@@ -80,10 +80,14 @@ broker-agnostic. Install only the ones you need:
     cd honba-adapters
 
     pip install -e ./shared
-    pip install -e ./dhan       # or zerodha, angelone, fyers, upstox
+    pip install -e ./dhan -e ./zerodha   # the two implemented adapters
 
-Each adapter ships with a paper-trading mode. You don't need live broker
-credentials to run backtests or paper strategies.
+Only Dhan and Zerodha are implemented today; the other broker packages are
+scaffolds. Each implemented adapter has a paper mode that needs no credentials
+(`DhanAdapter(mode="paper")`), but you must ask for it: a bare `DhanAdapter()`
+without credentials raises `AuthenticationError`. You don't need live broker
+credentials to run backtests or paper strategies. See
+[Adapter Configuration](../india/adapter_configuration.md).
 
 ## Configuration
 
@@ -96,6 +100,7 @@ Minimal `.env` for backtesting only:
     # Leave blank — no broker credentials required for backtests
     DHAN_CLIENT_ID=
     DHAN_ACCESS_TOKEN=
+    DHAN_MODE=paper          # build adapters in paper mode (default is live)
 
 For LLM-driven research (optional):
 

@@ -388,7 +388,9 @@ the only difference between paper and live is fill quality.
    above.
 2. Implement the facade plus both role protocols.
 3. Add fixtures and tests, including
-   `await verify_adapter_contract(MyAdapter(config))`.
+   `await verify_adapter_contract(MyAdapter(config))`, and a
+   `tests/fixtures/<name>/routes.toml` so the repository's contract suite
+   discovers the adapter automatically.
 4. Advertise the adapter through the `honba.adapters` entry-point group.
 5. Submit a pull request.
 

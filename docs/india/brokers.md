@@ -11,10 +11,25 @@ This document summarises the practical differences.
 *Last verified: 2026-09-30. Broker APIs change frequently; verify against
 the broker's own documentation before relying on any detail below.*
 
-## The Six Primary Adapters
+## Adapter Status
 
-Honba ships adapters for the brokers most commonly used by algorithmic
-traders in India:
+Two adapters are implemented and contract-certified: **Dhan** and **Zerodha**.
+Angel One, Fyers, Upstox, Kotak, IIFL and Motilal Oswal exist as package
+scaffolds with the uniform layout only: no implementation, no entry point,
+and naming one in a run config fails with `AdapterNotFound`. The table below
+describes the brokers' own APIs so you can plan; it does not mean Honba can
+trade through the scaffolded ones yet. Status and setup are in
+[Adapter Configuration](adapter_configuration.md).
+
+| Broker | Honba adapter |
+|---|---|
+| Zerodha | Implemented |
+| Dhan | Implemented |
+| Angel One, Fyers, Upstox, Kotak, IIFL, Motilal Oswal | Scaffold only |
+
+## The Primary Brokers
+
+The brokers most commonly used by algorithmic traders in India:
 
 | Broker | API | Auth | Sandbox | Market data |
 |---|---|---|---|---|
@@ -24,6 +39,20 @@ traders in India:
 | Fyers | API v3 | OAuth | No | Included |
 | Upstox | Uplink | OAuth (daily) | **Yes** | Included |
 | Kotak | Kotak Neo | OAuth | No | Included |
+
+## Dhan Adapter
+
+Dhan (`honba-dhan`, `DhanAdapter`, registered as `dhan`) declares NSE, BSE and
+MCX; delivery, intraday and carry products; market, limit, stop-limit and
+stop-market orders; and `DAY` and `IOC` time in force. `GTC`, `FOK`, `GTD` and
+trailing stops are not declared and raise `CapabilityError` before any network
+call, which now includes a time in force with no wire mapping.
+
+Dhan sends the order validity that matches the intent: `DAY` as `"DAY"` and
+`IOC` as `"IOC"`. Earlier versions sent `DAY` for every order, so an IOC intent
+was silently placed as a day order. The `"IOC"` wire value has not been
+verified against the live DhanHQ API; see
+[Adapter Configuration](adapter_configuration.md#dhan-time-in-force).
 
 ## Zerodha Adapter
 
@@ -98,6 +127,9 @@ of adapter bugs:
 - **Fyers:** OAuth v3 with token refresh.
 - **Upstox:** OAuth with a daily browser login and no headless
   refresh — this is Upstox's main limitation for automated systems.
+
+In every case, credentials are read from the environment (`DHAN_*`,
+`ZERODHA_*`); see [Adapter Configuration](adapter_configuration.md).
 
 Honba's adapter facade abstracts the auth flow behind a single
 `connect()` coroutine returning a `SessionInfo`, but the token refresh
@@ -176,12 +208,20 @@ pricing page before relying on them — brokerage schedules change.
     max_retries = 3
 
 Credentials are read from environment variables, never stored in the
-config file. The `.env.example` in the scaffold lists the variables
-each adapter expects.
+config file. A live adapter built without them raises `AuthenticationError`
+naming the missing variables; it does not fall back to paper. The variable
+names, the `<PREFIX>MODE` switch and the cache directory (`HONBA_CACHE_DIR`)
+are described in [Adapter Configuration](adapter_configuration.md).
 
 ## Paper vs Live
 
-Paper trading is the **Sandbox adapter** (E3-S7). It implements the same
+There are two ways to run without a live broker. For adapter-level paper mode,
+build the adapter explicitly in paper mode (`DhanAdapter(mode="paper")`,
+`ZerodhaAdapter(mode="paper")`, `XConfig.paper()` or `<PREFIX>MODE=paper`); it
+needs no credentials and uses an in-memory transport. Bare `DhanAdapter()` and
+`ZerodhaAdapter()` no longer default to paper.
+
+Paper trading in the engine sense is the **Sandbox adapter** (E3-S7). It implements the same
 adapter contract over the real simulator, so a strategy cannot tell paper
 from live, and it is the recommended way to validate a strategy before
 going live. Configure it like any other adapter, by name under `[adapter]`,
@@ -207,18 +247,22 @@ so an adapter throttles its own transport until it does.
 
 ## Adding a New Broker
 
-If your broker is not in the list above:
+If your broker is not implemented (that includes the scaffolded ones):
 
-1. Create a new directory in `honba-adapters/` following the uniform
-   structure (`config.py`, `data.py`, `execution.py`, `instruments.py`,
-   `websocket.py`, `http.py`, `parsing.py`).
+1. Start from `honba-adapters/dhan/` and keep the uniform structure
+   (`config.py`, `data.py`, `execution.py`, `instruments.py`, `websocket.py`,
+   `http.py`, `parsing.py`, `constants.py`).
 2. Implement the `Adapter` facade plus the `MarketDataAdapter` and
-   `ExecutionAdapter` role protocols.
-3. Add fixtures and tests, including the shared contract suite.
-4. Advertise the package through the `honba.adapters` entry-point group.
+   `ExecutionAdapter` role protocols, declaring exactly what the broker supports.
+3. Build the honba-to-wire tables with `WireMap` and check them with
+   `assert_covers`.
+4. Record fixtures and add `tests/fixtures/<name>/routes.toml`; the contract
+   suite discovers the adapter from it.
+5. Advertise the package through the `honba.adapters` entry-point group.
 
-The adapter interface is documented in
-[Adapter Interface](../architecture/adapter_interface.md).
+The checklist, with details, is in
+[Adapter Configuration](adapter_configuration.md#adding-a-broker). The adapter
+interface is documented in [Adapter Interface](../architecture/adapter_interface.md).
 
 ## Source of Truth
 

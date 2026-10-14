@@ -9,9 +9,11 @@ adapter, test it, and publish it.
 Adding an adapter is a substantial piece of work — typically 2–5 days
 for a broker you have never integrated before. Before starting:
 
-1. Check whether the broker is already supported. Adapters exist for
-   Dhan, Zerodha, Angel One, Fyers, Upstox, Kotak, IIFL, and Motilal
-   Oswal.
+1. Check whether the broker is already supported. Dhan and Zerodha are
+   implemented and contract-certified. Angel One, Fyers, Upstox, Kotak,
+   IIFL, and Motilal Oswal exist only as package scaffolds (the uniform
+   layout, no implementation, no entry point), so they are open for you to
+   build.
 2. Read [Adapter Interface](../architecture/adapter_interface.md).
 3. Get API access from the broker. Most Indian brokers require
    registration and a static IP for order placement.
@@ -90,6 +92,14 @@ for brokers with a daily-refresh OAuth flow.
             extra = "forbid"
 
 The `SecretStr` type prevents the token from appearing in logs.
+
+Follow the environment convention the implemented adapters use: credentials
+come from `<PREFIX>*` variables through a `from_env(prefix=...)` classmethod,
+`<PREFIX>MODE` selects `live` (default) or `paper`, building the adapter
+without credentials raises `AuthenticationError` rather than silently using
+paper, and the cache lives under `$HONBA_CACHE_DIR/<broker>`. The helpers
+`cache_dir`, `env_mode` and `missing_credentials_error` in
+`honba_adapters_shared.env` implement this.
 
 ## Step 3: Implement the REST Client
 
@@ -633,6 +643,15 @@ the adapter an adapter:
 
 It is deterministic and pytest-free (it raises `ContractViolation` on the
 first broken rule), and it leaves the adapter disconnected when it finishes.
+
+Certification in the `honba-adapters` repository is auto-discovered: the root
+`tests/test_contract_suite.py` runs the suite over every package that has
+`tests/fixtures/<name>/routes.toml`, so adding that file is enough and the
+test file needs no edit. `routes.toml` names the `adapter`, `config` (which
+must provide `.paper()`) and `fallback` (the in-memory order handler) hooks as
+`module:attr` strings, and maps URL path fragments to recorded fixture files
+under `[routes]`. Packages without a `routes.toml` are reported as skipped
+placeholders.
 The contract suite deliberately leaves stream delivery, reconnect and
 data-gap markers to their own story, so cover those in the adapter's tests.
 
@@ -771,6 +790,10 @@ Before opening a pull request:
 - [ ] Fixtures recorded for all message types
 - [ ] `await verify_adapter_contract(MyBrokerAdapter(config))` passes
 - [ ] Tests for parsing, data, execution, and error paths
+- [ ] Honba-to-wire mappings built with `WireMap`, with `assert_covers`
+      checking every declared capability at import
+- [ ] `tests/fixtures/<name>/routes.toml` added so the root contract suite
+      discovers the adapter
 - [ ] Entry point declared under `[project.entry-points."honba.adapters"]`
 - [ ] Added to CI workflow
 - [ ] README with installation, configuration, and example
