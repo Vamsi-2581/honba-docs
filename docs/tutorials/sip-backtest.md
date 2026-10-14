@@ -178,6 +178,12 @@ The behavioral model typically produces a 1–2% lower XIRR than the
 disciplined SIP, because investors who skip installments systematically
 miss the best entry points.
 
+A NAV dated D is not known during D. In the `honba-examples` mutual-fund SIP
+(`mutual_funds/02_sip_backtest.py`), an instalment dated on a day with no
+published NAV buys the next published NAV, never a past one, and an instalment
+with no NAV within a week is skipped. Check how your own loader treats a
+non-publication day.
+
 ## What to Try Next
 
 1. **Step-up SIP.** Increase the monthly amount by 10% each year.
