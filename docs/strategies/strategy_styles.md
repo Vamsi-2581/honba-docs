@@ -99,16 +99,27 @@ What Honba does differently:
 - **Per-instrument evaluation.** A multi-instrument strategy gets one call per
   instrument bar.
 
-### Known limitation: no automatic OCO
+### OCO protective orders
 
-The stop and the take-profit are two independent orders. When one fills, the
-other is **not** cancelled by `DeclarativeStrategy`; the engine or broker would
-have to provide OCO, and that is an open TODO. In addition, resting protective
-orders count as unfilled orders, so `busy()` is true while they rest and
-`should_exit` is **not consulted** until they are gone. Exits then come from the
-stop or the target themselves. If you need a discretionary exit while
-protective orders are working, use the event-driven layer and cancel them
-yourself.
+The stop and the take-profit placed for one entry fill form a One-Cancels-Other
+group (`oco = True`, the default; set `oco = False` on your class for the old
+behaviour). `DeclarativeStrategy` manages the group itself through
+`self.cancel(intent)`, which the runner relays to the execution port:
+
+- when one leg fills in full, the other is cancelled;
+- when the position returns to flat, any leftover protective order is cancelled;
+- `should_exit` is consulted while only protective orders rest: it cancels them,
+  then sends the market exit. Any other unfilled order (an entry or exit in
+  flight) still blocks the rules, so evaluation step 1 becomes "busy with
+  something other than resting protectives".
+
+A partial fill of one leg does not resize its sibling (there is no order-modify
+support yet): the sibling stays at full size until its leg fills completely or
+the position is flat. Each entry fill, including each partial entry fill, is
+its own group. Cancel is a request: if both legs fill in the same simulator
+step, the second fill is not undone. Execution models that fill every order
+immediately (`BarCloseFills`) or reject non-market orders (`NextOpenExecution`)
+never leave a pair resting, so OCO matters with `L2Execution` and in live trading.
 
 Trailing stops (`OrderType.TRAILING_STOP`) are not used by this class; see
 [Position Management](position_management.md#trailing-stop).

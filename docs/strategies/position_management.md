@@ -159,10 +159,10 @@ self.ctx.submit(OrderIntent.stop_sell(iid, 100, 2400.00))
 self.ctx.submit(OrderIntent.limit_sell(iid, 100, 2550.00))
 ```
 
-The engine does **not** manage OCO (one-cancels-other) logic automatically. When either the stop or the target fills, the other remains active unless you cancel it.
+The engine does **not** manage OCO (one-cancels-other) logic automatically for hand-written strategies. When either the stop or the target fills, the other remains active unless you cancel it, which you can do with `self.cancel(intent)`.
 
 !!! note "Declarative strategies"
-    `DeclarativeStrategy` places its protective stop and target as two independent orders and does **not** cancel the survivor when the other fills (a TODO in the code). See [Strategy Styles](strategy_styles.md#known-limitation-no-automatic-oco).
+    `DeclarativeStrategy` cancels the surviving protective leg automatically when the other fills or the position goes flat. See [Strategy Styles](strategy_styles.md#oco-protective-orders).
 
 ## Position Tracking
 
