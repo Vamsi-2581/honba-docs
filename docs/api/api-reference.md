@@ -25,6 +25,7 @@ Every response is a `ResponseEnvelope<T>`; the table names the payload `T`.
 | `GET` | `/quotes` | read | `QuotesQuery` | `QuotesResponse` | — |
 | `GET` | `/bars/{id}` | read | `BarsQuery` | `BarsResponse` | — |
 | `GET` | `/depth/{id}` | read | `DepthQuery` | `DepthResponse` | — |
+| `POST` | `/bars` | write | `BarsIngestRequest` | `BarsIngestResponse` | — |
 | `POST` | `/strategies` | read | `StrategiesRequest` | `CompiledStrategy` | — |
 | `GET` | `/strategies` | read | `—` | `StrategiesResponse` | — |
 | `POST` | `/strategies/verify` | read | `StrategyManifest` | `StrategyIr` | — |
@@ -38,6 +39,8 @@ Every response is a `ResponseEnvelope<T>`; the table names the payload `T`.
 | `GET` | `/orders` | read | `OrdersQuery` | `OrdersResponse` | — |
 | `DELETE` | `/orders/{id}` | write | `—` | `OrdersResponse` | — |
 | `POST` | `/positions/close` | write | `—` | `PositionsResponse` | — |
+| `GET` | `/trading-state` | read | `—` | `TradingStateResponse` | — |
+| `PUT` | `/trading-state` | write | `TradingStateRequest` | `TradingStateChange` | — |
 | `GET` | `/screener/scan` | read | `ScreenerQuery` | `ScreenerResponse` | — |
 | `GET` | `/journals/{id}` | read | `—` | `TradesResponse` | — |
 
@@ -122,10 +125,13 @@ Types generated into the JSON Schema, TypeScript, `.pyi` and MCP artifacts.
 - `BacktestEventsQuery`
 - `OrdersRequest`
 - `OrdersQuery`
+- `BarsIngestRequest`
+- `TradingStateRequest`
 
 ### Response DTOs
 
 - `BacktestResponse`
+- `BarsIngestResponse`
 - `BarsResponse`
 - `Capabilities`
 - `CompiledStrategy`
@@ -140,4 +146,6 @@ Types generated into the JSON Schema, TypeScript, `.pyi` and MCP artifacts.
 - `StreamFrame`
 - `SweepResponse`
 - `TradesResponse`
+- `TradingStateChange`
+- `TradingStateResponse`
 
