@@ -46,7 +46,7 @@ Every response is a `ResponseEnvelope<T>`; the table names the payload `T`.
 | `GET` | `/profile` | read | `—` | `Profile` | — |
 | `PUT` | `/profile` | read | `Profile` | `Profile` | — |
 | `GET` | `/profile/layouts` | read | `—` | `LayoutsResponse` | — |
-| `PUT` | `/profile/layouts/{name}` | read | `—` | `ProfileRevision` | — |
+| `PUT` | `/profile/layouts/{name}` | read | `LayoutDocument` | `ProfileRevision` | — |
 | `DELETE` | `/profile/layouts/{name}` | read | `—` | `ProfileRevision` | — |
 | `GET` | `/profile/modules` | read | `—` | `ModulesResponse` | — |
 | `PUT` | `/profile/modules/{id}` | read | `Module` | `ProfileRevision` | — |
