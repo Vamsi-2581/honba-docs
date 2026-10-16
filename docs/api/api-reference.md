@@ -43,6 +43,14 @@ Every response is a `ResponseEnvelope<T>`; the table names the payload `T`.
 | `PUT` | `/trading-state` | write | `TradingStateRequest` | `TradingStateChange` | — |
 | `GET` | `/screener/scan` | read | `ScreenerQuery` | `ScreenerResponse` | — |
 | `GET` | `/journals/{id}` | read | `—` | `TradesResponse` | — |
+| `GET` | `/profile` | read | `—` | `Profile` | — |
+| `PUT` | `/profile` | read | `Profile` | `Profile` | — |
+| `GET` | `/profile/layouts` | read | `—` | `LayoutsResponse` | — |
+| `PUT` | `/profile/layouts/{name}` | read | `—` | `ProfileRevision` | — |
+| `DELETE` | `/profile/layouts/{name}` | read | `—` | `ProfileRevision` | — |
+| `GET` | `/profile/modules` | read | `—` | `ModulesResponse` | — |
+| `PUT` | `/profile/modules/{id}` | read | `Module` | `ProfileRevision` | — |
+| `DELETE` | `/profile/modules/{id}` | read | `—` | `ProfileRevision` | — |
 
 ## Domain types
 
@@ -137,8 +145,12 @@ Types generated into the JSON Schema, TypeScript, `.pyi` and MCP artifacts.
 - `CompiledStrategy`
 - `DepthResponse`
 - `InstrumentsResponse`
+- `LayoutsResponse`
+- `ModulesResponse`
 - `OrdersResponse`
 - `PositionsResponse`
+- `Profile`
+- `ProfileRevision`
 - `QuotesResponse`
 - `ScreenerResponse`
 - `StrategiesResponse`
