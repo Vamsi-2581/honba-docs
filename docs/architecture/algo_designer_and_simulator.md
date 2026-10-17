@@ -876,4 +876,12 @@ A phase is complete only when its own acceptance criteria and the applicable gat
 
 **Deferred / open:** an **`UpsertSweepReport`/typed `SweepReportResponse`** would let the Simulator read an optimal combination and apply it via `applySweepParams` (the "apply optimal" acceptance criterion); a **periodic return series** (or `sortino` itself) on the run payload would turn Sortino from `n/a` into a real metric and a mark-to-market equity curve into a wire value; a **`signal_price`/slippage** field (or an order route) would fill the journal's slippage column. **`dist/` is not rebuilt in this commit** (unlike P6/P7): the convention is to commit the bundle, but a rebuild now would compile the in-flight, uncommitted feature above into the shared entry chunks, so the rebuild is deferred until that feature lands and the tree is clean.
 
+---
+
+### 2026-10-17 — Phase 8 (FE) — deferred dist rebuild closed
+
+The in-flight simulator workbench (the replay engine / multi-chart / portfolio sandbox feature flagged above) landed as `honba-frontend` `4180d6d` and the working tree went clean, so the deferred Phase 8 `dist/` rebuild is now done: `npm run build` (`tsc && vite build`) at `2fd749b` from the clean tree, with the full gate re-run on HEAD — `npm run typecheck` clean · `npm run lint` clean · `npm run test` **337/337**. `dist/` now matches HEAD; the simulator entry is ~76 kB (gzip ~22.7 kB), up from the P7 bundle as the analytics surface, the run-log SSE fold and the workbench join it.
+
+**Still deferred (HB contract):** the typed `SweepReportResponse` (apply-optimal), a periodic return series (`sortino`/mark-to-market equity) and a journal `signal_price`/slippage field.
+
 **Next:** Phase 9 (end-to-end verification, performance & cutover).
