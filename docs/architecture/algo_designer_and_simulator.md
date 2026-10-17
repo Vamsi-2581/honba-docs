@@ -264,7 +264,20 @@ export interface SavedStrategyManifest {
 - **Trade markers:** derived by pairing fills from `GET /backtests/{id}/journal` into round trips; tooltip shows execution price, slippage, size, realised PnL, exit reason.
 - **Analytics:** metrics ribbon, equity + underwater, filterable trade journal with CSV export, monthly returns heatmap, and ADR 0029 trust badges (DSR/PBO/holdout/walk-forward) from `ValidationBlock`.
 
-### 5.7 Module layout (current → target)
+### 5.8 Signals vs. Alerts: QuantDinger Concept Mapping & Honba Architecture
+
+A recurring comparison between QuantDinger and Honba is the relationship between **"Signals"** and **"Alerts"**:
+
+| Dimension | QuantDinger Concept | Honba Native Architecture |
+| :--- | :--- | :--- |
+| **Origin & Definition** | **Signal**: Boolean / discrete event generated when strategy or indicator conditions evaluate to true (e.g., `crosses_above`, `rsi < 30`). | **Strategy Signal**: Emitted by `condition` / `logic` graph nodes via the `signal` boolean port (`PortKind: 'bool'`). Evaluated on bar closes. |
+| **Execution Path** | Directly routes to Order Execution (Trade) or triggers an external notification. | 1. **Order Path**: Wire `signal` port -> `order` node (`Buy` / `Sell`) for automatic position execution.<br>2. **Alert Path**: Publishes to `src/core/alerts/bus.ts` (`AlertSourceFamily: 'strategy'`). |
+| **Delivery & Sinks** | Webhooks, desktop notifications, email alerts. | **Alert System** (`src/core/alerts/types.ts`): Sinks via `DeliveryKind`: `toast`, `log`, `notification`, `sound`, `webhook`, `action` with configurable `cooldownMs` and repeat rules (`once` vs `everyTime`). |
+| **Simulation & History** | "Signal Center" / Historical Signal Log. | **Simulator Run Journal**: Signals are recorded alongside order fills in the event journal, rendered as interactive markers on the chart and tabulated in the Trade & Signal Journal. |
+
+In AlgoDesigner, every `ConditionNode` produces a `signal` port. Strategies can treat this as an automated trade trigger, an alert notification, or both.
+
+### 5.9 Module layout (current → target)
 
 ```
 honba-frontend/src/
@@ -633,8 +646,10 @@ POST /assistant/propose
 
 ### 8.2 Run request surface confirmed in P0
 
-`POST /backtests` takes `BacktestRequest { strategy, universe, start?, end?, bar_spec?, fill_model?, initial_capital?, seed? }`.
-`ExecutionConfig` carries `fill_model`, `slippage_multiplier`, `cost_model_version` and `apply_market_calendar` — but **no explicit commission or margin field**. The Simulator's commission/margin controls (P6) therefore need either a versioned request field HB-side or must be expressed through `cost_model_version`; they must not be fabricated in the UI (risk R5).
+`POST /backtests` takes `BacktestRequest { strategy, universe, start?, end?, bar_spec?, fill_model?, initial_capital?, seed?, commission_per_fill?, slippage_bps? }`.
+`ExecutionConfig` carries `fill_model`, `slippage_multiplier`, `cost_model_version` and `apply_market_calendar` — but **no explicit margin field**.
+
+The commission/slippage gap was closed in P6 (see §12): both are now versioned request fields — `commission_per_fill` (flat cost per fill, in the settlement currency) and `slippage_bps` (adverse, in basis points) — validated by `BacktestRequest::resolve` against the simulator's own ceilings and applied by the bar-fill venue through `FillCosts` and `SlippageModel`. They are never fabricated in the UI (risk R5). Margin has neither a request field nor a P6 control, so it remains a deliberate gap.
 
 ---
 
@@ -646,7 +661,7 @@ POST /assistant/propose
 | R2 | **Code → graph recognition** is lossy for hand-written spans. | High | `code_only` marking (never silently overwrite), `spans` surfaced as squiggles, round-trip tests over the catalogue (P3); editor-focus precedence policy. |
 | R3 | **Position churn** on every sync makes the canvas unusable. | Medium | ID stabilisation + preserved `positions` (P3); regression test asserting no movement when a graph is re-recognised unchanged. |
 | R4 | **Assistant hallucinates** infeasible graphs. | High | Every candidate routed through the verifier before display; `BLOCKED` quarantine; propose-never-execute (ADR 0029 S5, P4). |
-| R5 | **Backtest request gaps** (commission/slippage/margin) force client-side fabrication. | Medium | Contract gap raised in P0; add versioned fields HB-side, never fake in the UI (P6). |
+| R5 | **Backtest request gaps** (commission/slippage/margin) force client-side fabrication. | Medium | Contract gap raised in P0; add versioned fields HB-side, never fake in the UI. **Closed for commission/slippage in P6** (`commission_per_fill`, `slippage_bps` — §8.2); margin has no control or field yet. |
 | R6 | **Journal is fills, not round trips** — PnL pairing is ambiguous on scale-out. | Medium | Explicit pairing rules + fixture tests covering partial exits (P7); label derived metrics as derived. |
 | R7 | **Chart/strategy parameter divergence** (chart shows different periods than the run). | Medium | Derive overlay parameters from the strategy's graph nodes wherever possible (P7). |
 | R8 | **Scope creep** into live trading from the ops console. | — | Ops console stays as shipped (ADR 0029 S6); this plan only references it. |
@@ -682,9 +697,10 @@ A phase is complete only when its own acceptance criteria and the applicable gat
 1. **Editor choice** (P2): **resolved — Monaco**, wired to the bundled package (no CDN) with a textarea fallback; verified build produces a separate lazy chunk (`monaco-python-editor-*.js`, ~871 kB gzip) plus `editor.worker` and a lazy `python` language chunk. CodeMirror 6 remains the escape hatch if the P9 budget check fails.
 2. **Recognise endpoint shape** (P3): proposed combined response in §8.1 — confirm with the HB owner. Until then the FE uses the client-side selector; the response shape is consumed via `Recognizer`, so switching is additive.
 3. **Assistant transport** (P4): dedicated REST route vs the MCP gateway (ADR 0009) — this plan assumes REST for symmetry with `verify`; proposed shape in §8.1. Until then the FE feature-detects `client.postAssistantPropose` and falls back to the local engine.
-4. **Run-parameter coverage** (P6): commission/margin are not in the current request/`ExecutionConfig` (§8.2); add versioned fields rather than UI-side defaults.
+4. **Run-parameter coverage** (P6): **resolved for commission/slippage** — `BacktestRequest` now carries `commission_per_fill` and `slippage_bps`, validated by the resolver and applied by the bar-fill venue (§8.2). Margin still has no request field and no P6 control.
 5. **Docs nav:** resolved — the document is listed under Architecture in `mkdocs.yml`.
 6. **Baseline metrics** (P9): whether `honba-strategies` should ship `backtest_result.json` for every catalogue entry to power Library previews. `registry.json` currently carries name/category/path/description/tags only; sufficient for a P5 list, but per-strategy default universe/params would improve previews.
+7. **Which strategies can actually run** (P6 gap): `honba` executes exactly three registered Rust strategies — `buy_and_hold`, `rsi_reversal`, `sma_crossover` — and `StrategyIr` has no interpreter, so a compiled graph runs only if a registered strategy carries its name (otherwise `no_rust_implementation`). Resolved for this plan by aligning one built-in template to `sma_crossover`; the permanent fix (a generic IR interpreter, or a Rust strategy per registered name) is an `honba` decision out of scope for P7/P8.
 
 ---
 
@@ -786,6 +802,26 @@ A phase is complete only when its own acceptance criteria and the applicable gat
 
 **Verification run:** `npm run typecheck` clean · `npm run test` **213/213** · `npm run lint` clean · `vite build` OK (`simulator.html` + a 20 kB `simulator-*.js` entry, sharing the existing `symbol-search-modal` chunk).
 
-**Deferred / open:** the HB commission/slippage field (versioned request field — the panel already flags them); compilation-before-run (the FE sends the strategy name, exactly as the Designer's `runNow` does — whether HB resolves-by-name or needs a prior `POST /strategies` is an open question); the equity curve, trade markers, journal, heatmap and sweeps *UI* (P7/P8).
+**Deferred / open (as of the P6 FE commit):** the HB commission/slippage field and compilation-before-run — both closed by the gap work in the next entry; the equity curve, trade markers, journal, heatmap and sweeps *UI* (P7/P8) remain deferred.
 
 **Next:** Phase 7 (interactive multi-pane chart & trade markers).
+
+---
+
+### 2026-10-17 — Phase 6 contract gaps closed (HB + FE)
+
+**Gap A — commission & slippage as versioned request fields (risk R5, §8.2).** The two knobs the P6 panel could not send are now wire fields rather than UI-side defaults:
+
+- **`honba-api`** — `BacktestRequest` gained `commission_per_fill?` and `slippage_bps?`; `BacktestRequest::resolve` validates them (finite and inside `0..=MAX_COMMISSION_PER_FILL` / `0..=MAX_SLIPPAGE_BPS`) and `ResolvedBacktest` carries them, `skip_serializing_if`-zero so a manifest written before the field still round-trips (ADR 0012 rule 1). `MAX_COMMISSION_PER_FILL` mirrors `honba_sim::bar_fill::MAX_FLAT_COST` and is pinned to it by a test in `honba-api-rest`, exactly as `FILL_MODELS` already is.
+- **`honba-api-rest`** — the bar-fill venue is built from `BarFillEngine::with_costs(FillCosts::new(commission_per_fill, 0.0))` and `.with_slippage(SlippageModel::Static { bps, kind: Adverse })` (both only when non-zero, so a zero-cost run stays byte-identical); the two knobs are folded into the run cache key so a changed commission or slippage can never reuse a cached result; and `assumptions()` now reports `applied: { commission_per_fill, slippage_bps }` while dropping `transaction_costs`/`slippage` from `not_modelled` **only** when they are actually modelled (`taxes_and_levies` is always listed).
+- **Regenerated** in the same effort: `schema/domain`, `schema/openapi`, `python/src/honba/wire/generated`, plus the FE `domain.ts` (the typed client is unchanged — it references `BacktestRequest` by name).
+- **FE** — `controls.ts` transmits both fields, validates them against the resolver's bounds, and `notModelled` is empty; the control is labelled *Commission / fill* so the UI wording matches the wire semantics exactly.
+- **Tests** — resolver accept/reject cases, the ceiling pin (`max_commission_matches_the_simulator_ceiling`), and an executor test asserting costs lower net PnL and show up under `applied` (with both still listed as unmodelled at zero).
+
+**Gap B — compile-before-run (ADR 0017 decision 6).** A run's `strategy` resolves against the compiled-session catalogue *or* the registered Rust strategies, and a compiled manifest runs only if a registered strategy carries its name. Neither the Designer's `runNow` nor the Simulator ever called `POST /strategies`, so every submission fell through to `unknown_strategy`.
+
+- `core/designer/manifest.ts` — `toManifest(graph)` extracted from `store.ts`, so the verifier, `runNow` and the Simulator send byte-identical manifests and `source_hash`.
+- `core/designer/compile.ts` — `compileStrategy()` registers the graph and returns the id to run with; it is **feature-detected** (a client without `postStrategies` runs by graph name, as before), never throws, and a rejected compile is reported. Both `runNow` and `simulator-store.execute` now compile first and submit the compiled id; a compile failure surfaces as the run error and blocks the submit.
+- **Architectural limit, unchanged:** `honba` executes exactly three strategies (`buy_and_hold`, `rsi_reversal`, `sma_crossover`, `registry.rs`) and `StrategyIr` is metadata only — there is no interpreter. Any other graph name is refused with `no_rust_implementation`. To make the happy path reach `completed`, the first built-in template is aligned to the registered strategy: id and name `sma_crossover`, graph `SMA 3 / SMA 8` on `TCS.NSE` daily (10 shares) — and because it is templates[0], it is also the Simulator's default selection. The other three templates, and any hand-authored graph, run only once `honba` grows a registered strategy of that name or a generic IR interpreter — recorded as open question 7.
+
+**Verification run:** `npm run test` **220/220** · `npm run lint` clean · `npm run typecheck` reports no error in any file of this change (a concurrent edit to `apps/algodesigner/canvas.tsx` outside this change was in flight at verification time and is untouched here) · `cargo test -p honba-api -p honba-api-rest` green · `cargo clippy -p honba-api -p honba-api-rest --all-targets -- -D warnings` clean · `cargo fmt --all` applied · `make codegen` regenerating schema/OpenAPI/Python/MCP/docs/FE-types without hand edits.
