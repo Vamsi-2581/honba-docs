@@ -462,13 +462,13 @@ Repos are abbreviated: **FE** = `honba-frontend`, **HB** = `honba`, **STRAT** = 
 
 **Work items**
 
-- [ ] **FE:** rewrite `apps/simulator-app.tsx` on `AppShell currentAppId="simulator"` (drop `mountPlaceholder`).
-- [ ] **FE:** `apps/simulator/store/simulator-store.ts` — active strategy (graph + name), universe, dates, timeframes, capital, fill model, slippage, run state, results, error.
-- [ ] **FE:** `components/simulation-controls.tsx` — symbol (shared symbol search used by Workbench), benchmark (default NIFTY 50), period presets `[1M][3M][6M][1Y][Custom]`, capital, commission/slippage, fill model, `[Run Backtest]`, `[Parameter Sweeps]`.
-- [ ] **FE:** **hand-off contract** — `Simulate →` in the Designer navigates to `/simulator.html?strategy=<slug>&source=designer` and passes the graph via `sessionStorage` (graphs exceed URL length); on load the Simulator validates and selects it, falling back to the Library.
-- [ ] **FE:** `Run Backtest` → `client.postBacktests({ strategy, universe, start, end, bar_spec, fill_model, initial_capital, seed })`; poll `GET /backtests/{id}` until terminal; surface `error`/`status` per the regenerated contract.
-- [ ] **HB:** close any contract gap found in P0 (e.g. explicit commission) with a versioned request field rather than a client-side fabrication.
-- [ ] **FE:** empty/loading/error states and a "no results yet" bench skeleton.
+- [x] **FE:** rewrite `apps/simulator-app.tsx` on `AppShell currentAppId="simulator"` (drop `mountPlaceholder`). *(Shipped: hydrates from the hand-off / Library / last selection and hosts the controls + results panes.)*
+- [x] **FE:** `apps/simulator/store/simulator-store.ts` — active strategy (graph + name), universe, dates, timeframes, capital, fill model, slippage, run state, results, error. *(`createSimulatorStore` factory; the pure logic lives in `core/simulator/{controls,run,select,persistence}.ts`.)*
+- [x] **FE:** `components/simulation-controls.tsx` — symbol (shared symbol search used by Workbench), benchmark (default NIFTY 50), period presets `[1M][3M][6M][1Y][Custom]`, capital, commission/slippage, fill model, `[Run Backtest]`, `[Parameter Sweeps]`. *(Reuses `SymbolSearchModal`; the `[Parameter Sweeps]` engine hand-off is P8. Commission/slippage are captured but flagged as not sent — see the HB bullet.)*
+- [x] **FE:** **hand-off contract** — `Simulate →` in the Designer navigates to `/simulator.html?strategy=<slug>&source=designer` and passes the graph via `sessionStorage` (graphs exceed URL length); on load the Simulator validates and selects it, falling back to the Library. *(Producer shipped in P1 `handoff.ts`; `resolveSelection` validates, then falls back Library → template.)*
+- [x] **FE:** `Run Backtest` → `client.postBacktests({ strategy, universe, start, end, bar_spec, fill_model, initial_capital, seed })`; poll `GET /backtests/{id}` until terminal; surface `error`/`status` per the regenerated contract. *(The wire contract is `POST /backtests` + `GET /backtests/{id}`, not `/strategies/{id}/backtests` + `/tasks/{id}`; the loop folds `pending|running` → running and keeps `completed|failed|cancelled`.)*
+- [ ] **HB:** close any contract gap found in P0 (e.g. explicit commission) with a versioned request field rather than a client-side fabrication. **Finding (P6):** `BacktestRequest` is `deny_unknown_fields` and carries no commission/slippage (they live in `ExecutionConfig`, which the run request cannot reach); the panel records them as `notModelled` and never fabricates them. A versioned request field remains the open HB work.
+- [x] **FE:** empty/loading/error states and a "no results yet" bench skeleton. *(Results panel: idle bench, running progress log, failed alert, metrics grid, payload preview.)*
 
 **Dependencies.** P5 (Library fallback + strategy source), P0 (run contract).
 
@@ -767,3 +767,25 @@ A phase is complete only when its own acceptance criteria and the applicable gat
 **Deferred / open:** HB `registry.json` route for the full catalogue; dedicated profile-manifest route (currently `putProfileLayoutsByName` as a generic doc store); the two P3/P4 endpoints.
 
 **Next:** Phase 6 (simulator shell, controls & Designer hand-off).
+
+### 2026-10-17 — Phase 6 (FE)
+
+**Contract finding (run surface).** The plan's `POST /strategies/{id}/backtests` + `GET /tasks/{task_id}` do not exist; the shipped contract is `POST /backtests` (`BacktestRequest { strategy, universe, start?, end?, bar_spec?, fill_model?, initial_capital?, seed? }`) returning a `run_id` + `RunStatus`, with `GET /backtests/{id}` for polling and `GET /backtests/{id}/journal` for fills. The resolver (`crates/honba-api/src/run_resolve.rs`) *requires* `strategy`, `universe`, `start`, `end` and a non-zero `seed`; `bar_spec` is `<n><s|m|h|d|w|mo>`; `fill_model ∈ {bar_fill, bar_fill_through, l2, none}`; and the struct is `deny_unknown_fields`. The FE was implemented against this real contract (as with P3/P4), not the aspirational one.
+
+**Phase 6 — Simulator shell, controls & Designer hand-off (FE).**
+- `core/simulator/controls.ts` — `PERIOD_PRESETS`, preset date maths (`presetRange`/`minusMonths` with day clamping), `controlIssues`, and `toBacktestRequest` (panel → `BacktestRequest`, pinned to the resolver's required fields). Commission/slippage are returned as `notModelled`, never fabricated (R5, §8.2).
+- `core/simulator/run.ts` — `foldStatus`/`applyRunResponse`/`applyRunError` reducers and `runBacktest`, a poll-until-terminal loop over injected `RunClient` + `sleep` + `maxPolls` (no real timers in tests; never hangs on `running`).
+- `core/simulator/select.ts` — `resolveSelection` (hand-off → Library slug → first saved → template, each gated by `graphIsRunnable`), plus `controlsForGraph` pre-fill and `universeString` (named universe ▸ explicit subscriptions ▸ panel symbol).
+- `core/simulator/persistence.ts` — last-selection stash (`honba.simulator.selection`) so a reload restores the selection (acceptance criterion).
+- `apps/simulator/store/simulator-store.ts` — `createSimulatorStore()` factory (isolated tests) + `useSimulatorStore` singleton; `hydrate`/`setControls`/`select`/`plan`/`execute`/`resetRun`.
+- `apps/simulator/components/simulation-controls.tsx` — symbol via the shared Workbench `SymbolSearchModal`, benchmark, period presets, timeframe, capital, commission/slippage (with the not-sent note), fill model, `[Run Backtest]`, `[Parameter Sweeps]` (engine hand-off deferred to P8).
+- `apps/simulator/components/results-panel.tsx` — status pill, `BacktestMetrics` grid, request-payload preview + R5 note, progress log, idle/failed states.
+- `apps/simulator-app.tsx` — rewritten on `AppShell currentAppId="simulator"`; drops `mountPlaceholder`; hydrates on mount and runs without a page reload.
+- `dist/` was rebuilt from an isolated git worktree pinned to this commit, so it matches the committed source exactly and does not pick up another agent's uncommitted theme edits in the shared working tree.
+- Tests: `controls.test.ts`, `run.test.ts`, `select.test.ts`, `persistence.test.ts` and `simulator-store.test.ts` (35 new; mocked client, injected sleep).
+
+**Verification run:** `npm run typecheck` clean · `npm run test` **213/213** · `npm run lint` clean · `vite build` OK (`simulator.html` + a 20 kB `simulator-*.js` entry, sharing the existing `symbol-search-modal` chunk).
+
+**Deferred / open:** the HB commission/slippage field (versioned request field — the panel already flags them); compilation-before-run (the FE sends the strategy name, exactly as the Designer's `runNow` does — whether HB resolves-by-name or needs a prior `POST /strategies` is an open question); the equity curve, trade markers, journal, heatmap and sweeps *UI* (P7/P8).
+
+**Next:** Phase 7 (interactive multi-pane chart & trade markers).
