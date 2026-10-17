@@ -96,6 +96,7 @@ nav:
   - Architecture:
       - architecture/index.md
       - Overview: architecture/overview.md
+      - Algo Designer & Simulator (plan): architecture/algo_designer_and_simulator.md
       - Adapter Interface: architecture/adapter_interface.md
       - Money and Currency: architecture/money.md
       - Order Reject and Cancel: architecture/order_reject_cancel.md
