@@ -51,6 +51,11 @@ Every response is a `ResponseEnvelope<T>`; the table names the payload `T`.
 | `GET` | `/profile/modules` | read | `—` | `ModulesResponse` | — |
 | `PUT` | `/profile/modules/{id}` | read | `Module` | `ProfileRevision` | — |
 | `DELETE` | `/profile/modules/{id}` | read | `—` | `ProfileRevision` | — |
+| `GET` | `/portfolio` | read | `—` | `PortfolioSnapshot` | — |
+| `GET` | `/portfolio/accounts` | read | `—` | `PortfolioAccountsResponse` | — |
+| `GET` | `/portfolio/positions` | read | `—` | `PortfolioPositionsResponse` | — |
+| `GET` | `/portfolio/holdings` | read | `—` | `PortfolioHoldingsResponse` | — |
+| `GET` | `/portfolio/trades` | read | `—` | `TradesResponse` | — |
 
 ## Domain types
 
@@ -148,6 +153,10 @@ Types generated into the JSON Schema, TypeScript, `.pyi` and MCP artifacts.
 - `LayoutsResponse`
 - `ModulesResponse`
 - `OrdersResponse`
+- `PortfolioAccountsResponse`
+- `PortfolioHoldingsResponse`
+- `PortfolioPositionsResponse`
+- `PortfolioSnapshot`
 - `PositionsResponse`
 - `Profile`
 - `ProfileRevision`
