@@ -548,9 +548,9 @@ Repos are abbreviated: **FE** = `honba-frontend`, **HB** = `honba`, **STRAT** = 
 - [x] **FE:** performance budgets: Flow update < 350 ms after a keystroke; Designer first paint excludes Monaco; Simulator chart renders 1 year of 5 m bars without dropped frames.
 - [x] **FE:** accessibility pass on panes/drawers (focus order, keyboard resize, ARIA on tabs/panes).
 - [x] **FE:** delete `mountPlaceholder('simulator')`; confirm `core/apps.ts` metadata matches the shipped taglines.
-- [ ] **HB:** final client regeneration + contract drift check (`cargo test -p honba-codegen`).
-- [ ] **DOCS:** publish this document (nav entry from P0), update `architecture/index.md`, and add a Simulator usage page; sync `honba-frontend/docs/AlgoDesigner-PLAN.md` statuses to shipped.
-- [ ] **STRAT:** optionally add a benchmark `backtest_result.json` for each Library strategy so the drawer can show baseline metrics.
+- [x] **HB:** final client regeneration + contract drift check (`cargo test -p honba-codegen`).
+- [x] **DOCS:** publish this document (nav entry from P0), update `architecture/index.md`, and add a Simulator usage page; sync `honba-frontend/docs/AlgoDesigner-PLAN.md` statuses to shipped.
+- [ ] **STRAT:** optionally add a benchmark `backtest_result.json` for each Library strategy so the drawer can show baseline metrics. *(Deferred — optional, not actioned in this pass.)*
 
 **Dependencies.** P0–P8.
 
@@ -911,3 +911,17 @@ The in-flight simulator workbench (the replay engine / multi-chart / portfolio s
 **Next:** HB final client regeneration + contract drift check; DOCS nav publication of this document (both out of FE scope).
 
 **Next:** Phase 9 (end-to-end verification, performance & cutover).
+
+---
+
+### 2026-10-17 — Phase 9 (HB + DOCS)
+
+**HB — final client regeneration + contract drift check.** `cargo test -p honba-codegen` → **131/131 passed** (122 unit + 5 committed-artifact + 2 golden-vector + 2 renderer-golden tests). Regenerating via `make schema client` (the same target `honba-frontend`'s `npm run codegen` calls) and `make check-codegen-ci` produced **zero diff** in either repo — not in `honba`'s own schema/OpenAPI/pyi artifacts, nor in the frontend's generated `domain.ts`/`client.ts`. The P0–P8 contract between `honba` and `honba-frontend` is confirmed in sync; nothing to commit.
+
+**DOCS — publish, nav, usage page, plan sync.** This document was already in `mkdocs.yml`'s Architecture nav (P0); added `architecture/simulator_usage.md` — a user-facing walkthrough (loading a strategy, configuring a run, reading the ribbon/equity/journal/heatmap/badges/log, the sweeps hand-off, and the same honestly-labelled limitations this plan documents — Sortino `n/a`, blank slippage column, navigation-only sweeps, no pending-order markers) — and linked both the plan and the new page from `architecture/index.md`. `honba-frontend/docs/AlgoDesigner-PLAN.md`'s own Phase 7/8 headers were synced to `[Completed]` (done by the FE agent in the entry above). `make build-mkdocs` (`mkdocs build --strict`) is clean after fixing one bad anchor (`#9-risks-and-mitigations` → the real slug `#9-risks-mitigations`) — no broken links/nav.
+
+**STRAT.** The optional per-strategy `backtest_result.json` baseline-metrics item (§6 Phase 9) was deliberately deferred — it's marked optional in the plan and out of scope for this pass.
+
+**Phase 9 status:** all FE/HB/DOCS work items in §6 are checked off; the only remaining open box is the optional STRAT item. §10's verification gates pass (FE: 341/341 tests, clean typecheck/lint, build OK; HB: codegen drift-free; DOCS: strict build clean); the one acceptance criterion not literally met — "apply optimal parameters" reaching the Designer via the Simulator hand-off — is the pre-existing, honestly-documented `SweepReportResponse` wire gap (R5/§8.1), not a new shortfall.
+
+**Next:** none — P0–P9 of this plan are complete. The open items are the tracked HB contract gaps (typed sweep report, periodic-return/Sortino field, journal `signal_price`) and the optional STRAT baseline-metrics item, all already called out above and in §11/§12.
