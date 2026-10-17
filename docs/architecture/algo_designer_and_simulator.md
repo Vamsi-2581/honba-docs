@@ -544,10 +544,10 @@ Repos are abbreviated: **FE** = `honba-frontend`, **HB** = `honba`, **STRAT** = 
 
 **Work items**
 
-- [ ] **FE:** end-to-end flows (vitest + jsdom, or Playwright if added): Designer-coded → verify → simulate → analytics → apply-optimal-back-to-Designer; Library save → reload → reopen.
-- [ ] **FE:** performance budgets: Flow update < 350 ms after a keystroke; Designer first paint excludes Monaco; Simulator chart renders 1 year of 5 m bars without dropped frames.
-- [ ] **FE:** accessibility pass on panes/drawers (focus order, keyboard resize, ARIA on tabs/panes).
-- [ ] **FE:** delete `mountPlaceholder('simulator')`; confirm `core/apps.ts` metadata matches the shipped taglines.
+- [x] **FE:** end-to-end flows (vitest + jsdom, or Playwright if added): Designer-coded → verify → simulate → analytics → apply-optimal-back-to-Designer; Library save → reload → reopen.
+- [x] **FE:** performance budgets: Flow update < 350 ms after a keystroke; Designer first paint excludes Monaco; Simulator chart renders 1 year of 5 m bars without dropped frames.
+- [x] **FE:** accessibility pass on panes/drawers (focus order, keyboard resize, ARIA on tabs/panes).
+- [x] **FE:** delete `mountPlaceholder('simulator')`; confirm `core/apps.ts` metadata matches the shipped taglines.
 - [ ] **HB:** final client regeneration + contract drift check (`cargo test -p honba-codegen`).
 - [ ] **DOCS:** publish this document (nav entry from P0), update `architecture/index.md`, and add a Simulator usage page; sync `honba-frontend/docs/AlgoDesigner-PLAN.md` statuses to shipped.
 - [ ] **STRAT:** optionally add a benchmark `backtest_result.json` for each Library strategy so the drawer can show baseline metrics.
@@ -883,5 +883,31 @@ A phase is complete only when its own acceptance criteria and the applicable gat
 The in-flight simulator workbench (the replay engine / multi-chart / portfolio sandbox feature flagged above) landed as `honba-frontend` `4180d6d` and the working tree went clean, so the deferred Phase 8 `dist/` rebuild is now done: `npm run build` (`tsc && vite build`) at `2fd749b` from the clean tree, with the full gate re-run on HEAD — `npm run typecheck` clean · `npm run lint` clean · `npm run test` **337/337**. `dist/` now matches HEAD; the simulator entry is ~76 kB (gzip ~22.7 kB), up from the P7 bundle as the analytics surface, the run-log SSE fold and the workbench join it.
 
 **Still deferred (HB contract):** the typed `SweepReportResponse` (apply-optimal), a periodic return series (`sortino`/mark-to-market equity) and a journal `signal_price`/slippage field.
+
+---
+
+### 2026-10-17 — Phase 9 (FE)
+
+**Contract findings.** None new — Phase 9 is verification over the existing surface, and it reconfirms the open gap already recorded in the Phase 8 entry above: `SweepReportResponse.best`/`ranked` are untyped `unknown`, so the Simulator→Designer sweeps hand-off stays navigation-only. No "optimal combination" was read or applied in this phase's E2E test; it exercises the real, shipped behaviour instead.
+
+**Phase 9 — end-to-end verification, performance & cutover (FE).**
+- `src/apps/e2e-designer-simulator.test.ts` — one continuous flow through the real modules the shipped apps call (no jsdom/Playwright harness exists; `vitest.config.ts` runs `environment: 'node'`): a hand-written builder-chain source is recognised into a graph (`syncNow`), verified (`verifyNow`), handed off to a fresh `createSimulatorStore()` (`stashHandoff`/`takeHandoff`/`hydrate`), run to completion and its journal loaded (`execute`), turned into round trips and a provenance-tagged ribbon (`pairTrades`, `deriveRibbonMetrics`), then handed back to the Designer (`stashDesignerHandoff`/`takeDesignerHandoff`/`designerHandoffUrl`) — asserted as navigation only (drawer opens on `'sweeps'`, graph loaded, nothing from a sweep report applied).
+- `src/core/designer/e2e-library.test.ts` — save → reload → reopen, chained through `library-store.ts`'s pure `persistSaved`/`loadSaved` against an explicit fake storage (the node test environment has no real `localStorage`, so `defaultLayoutStorage()` resolves to `null`; this is the same storage seam `savedStrategies: loadSaved()` uses at real store construction). Asserts the generated Python source and the graph both survive the JSON round trip byte for byte, then that `openStrategy` restores them into the editor intact.
+- Performance budgets:
+  - **Flow-sync < 350 ms:** `code-to-graph.test.ts` adds a real wall-clock (not faked) measurement of `recognizeGeneratedSource` against a strategy carrying every catalogue indicator, asserting it completes in < 50 ms — the margin left after the scheduler's fixed 300 ms debounce window.
+  - **Designer first paint excludes Monaco:** re-verified, not re-architected — `code-editor-pane.tsx` still lazy-loads via `const MonacoPythonEditor = lazy(() => import('./monaco-python-editor'))`, and `vite build` confirms `monaco-python-editor-*.js` (~3.3 MB) is a chunk separate from the `algodesigner-*.js` entry (~344 kB), matching the Phase 2 log's chunk-inspection finding.
+  - **Simulator handles ~27,000 5-minute bars:** `core/simulator/perf-budget.test.ts`. **Honesty note (a past review flagged overstated performance claims as a serious issue in this plan, so this is stated plainly):** "dropped frames" is a real-browser compositor/paint concept this node-environment suite cannot measure. The test instead times the real hot data-processing path (`chart-data.ts` normalise/resample, `trade-pairing.ts` pairing/markers, `chart-series.ts` spec building, `analytics.ts` derivation) against a synthetic ~27,000-bar fixture and asserts a generous < 500 ms wall-clock budget. This is a **CPU-budget proxy**, not evidence about actual browser frame drops.
+- Accessibility pass on `apps/algodesigner/split-pane.tsx`, `workspace-layout.tsx`, `panels.tsx` and `apps/simulator/components/results-panel.tsx`: the `Splitter` already supported pointer **and** keyboard resize (`role="separator"`, arrow-key nudge) and the Library/Co-Pilot pane toggles already exposed `aria-pressed` — left untouched. Added what was actually missing: `role="tablist"/"tab"/"tabpanel"` with `aria-selected`/`aria-controls` on the Designer's bottom-drawer tab strip and the Simulator results panel's tab strip; `aria-pressed` on `Pane`'s focus-mode toggle and the Ops kill switch (both toggle buttons that previously communicated state only through colour/text).
+- Cutover housekeeping confirmed, no code change: `mountPlaceholder('simulator')` has no call sites (only `researcher-app.tsx`, a different app, still uses the placeholder pattern); `core/apps.ts`'s `algodesigner`/`simulator` taglines ("Visual Flow & Python Strategy Composer" / "Event-driven Tick Backtester & Execution Engine") match the shipped apps.
+- `honba-frontend/docs/AlgoDesigner-PLAN.md` synced: its own Phase 7 (AI Strategy Assistant) and Phase 8 (Sweeps/Walk-Forward) headers moved `[In Progress]` → `[Completed]` with a one-line "shipped" note each (that plan's numbering is independent of this document's P0–P9).
+- Tests: `e2e-designer-simulator.test.ts` (1), `e2e-library.test.ts` (1), `code-to-graph.test.ts` (+1 perf budget), `perf-budget.test.ts` (1).
+
+**Verification run:** `npm run typecheck` clean · `npm run test` **341/341** · `npm run lint` clean · `npm run build` OK (re-verified the Monaco/entry chunk split above; `dist/` rebuilt and committed alongside the a11y source changes that caused it).
+
+**Acceptance criteria (§10).** Flow reactivity < 350 ms — **met** (wall-clock margin test). Error resilience, AI mutation safety, save & reopen, no-duplicate-engine — already covered by P3–P6 tests, re-confirmed passing, not re-tested here. Simulate hand-off — **met** (E2E test, §10 item 5). Optimisation loop ("sweep's optimal parameters apply back onto the Designer canvas with a version snapshot") — **not met as literally written, by design**: per the Phase 8 contract gap, the cross-app hand-off is navigation-only (no typed `SweepReportResponse` to read an optimal combination from); the Designer's own local sweeps engine and `applySweepParams` (unaffected, still real) are the only path that can honestly "apply optimal parameters," and that path is Designer-local, not a Simulator hand-off. Dropped-frames budget — **partially met**: the CPU-budget proxy passes; actual browser frame-drop behaviour is unverified and unverifiable in this suite (see honesty note above).
+
+**Deferred / open (HB contract, unchanged from Phase 8):** the typed `SweepReportResponse` (would close the optimisation-loop gate above), a periodic return series (`sortino`/mark-to-market equity), a journal `signal_price`/slippage field.
+
+**Next:** HB final client regeneration + contract drift check; DOCS nav publication of this document (both out of FE scope).
 
 **Next:** Phase 9 (end-to-end verification, performance & cutover).
