@@ -499,12 +499,12 @@ Repos are abbreviated: **FE** = `honba-frontend`, **HB** = `honba`, **STRAT** = 
 
 **Work items**
 
-- [ ] **FE:** `components/interactive-chart.tsx` — `openalgo-charts` wrapper; main pane candles, overlay indicators (SMA/EMA/Bollinger/SuperTrend/PSAR), sub-panes (RSI, MACD histogram, ATR, Stochastic) and a volume pane with VWAP; synchronised cursors/time axis.
-- [ ] **FE:** bar loading via the existing data layer (`core/data-layer.ts`, `core/bhavcopy-pool.ts`, `core/candle-generator.ts`) for the selected symbol/timeframe/period; resample to the run's `bar_spec`.
-- [ ] **FE:** indicator series via the existing indicator runtime (`core/indicators`) using the same parameters as the strategy's graph nodes where possible, so the chart and strategy agree.
-- [ ] **FE:** **trade markers** — fetch `GET /backtests/{id}/journal` (`TradesResponse`), pair fills into round trips (`core/designer/trade-pairing.ts` or `apps/simulator/trade-pairing.ts`), plot entry/exit triangles at `ts_event`; tooltip shows price, slippage vs signal, size, realised PnL, exit reason.
-- [ ] **FE:** pending markers (orders submitted but unfilled) from the run event stream if available, otherwise derived and clearly labelled.
-- [ ] **FE:** graceful NSE market-calendar gaps (no synthetic bars across holidays).
+- [x] **FE:** `components/interactive-chart.tsx` — `openalgo-charts` wrapper; main pane candles, overlay studies and sub-panes, a volume pane and VWAP; one shared time axis so panes stay synchronised. *(Corrected: the fixed indicator menu is superseded by a graph-driven set — the chart shows the studies the strategy actually uses, with its parameters, so the two agree (R7). PSAR/`rma` have no registry descriptor and are reported, not drawn.)*
+- [x] **FE:** bar loading for the selected symbol/timeframe/period; resample to the run's `bar_spec`. *(Corrected: the Workbench data layer's display-string `time` cannot align with journal `ts_event`, so bars come from `GET /bars/{id}` (`tf=bar_spec`, run window) with a deterministic NSE-session preview fallback, labelled `source: 'preview'`.)*
+- [x] **FE:** indicator series using the same parameters as the strategy's graph nodes, so the chart and strategy agree. *(Via the `openalgo-charts/indicators` registry that `chart.addIndicator` reads, not the Workbench's separate 502-catalogue.)*
+- [x] **FE:** **trade markers** — fetch `GET /backtests/{id}/journal` (`TradesResponse`), pair fills into round trips (`core/simulator/trade-pairing.ts`), plot entry/exit triangles at `ts_event` (snapped to the bar); tooltip shows price, size, realised PnL and exit reason. *(Corrected: the journal carries no signal price, so slippage vs signal cannot be shown — never fabricated (R5).)*
+- [x] **FE:** pending markers. *(Corrected: there is no run event stream and the journal holds only fills, so unfilled orders cannot be derived; no pending markers are drawn and the absence is labelled. The derivable open-position tail **is** drawn as a clearly-marked derived dot.)*
+- [x] **FE:** graceful NSE market-calendar gaps (no synthetic bars across holidays).
 
 **Dependencies.** P6.
 
@@ -825,3 +825,28 @@ A phase is complete only when its own acceptance criteria and the applicable gat
 - **Architectural limit, unchanged:** `honba` executes exactly three strategies (`buy_and_hold`, `rsi_reversal`, `sma_crossover`, `registry.rs`) and `StrategyIr` is metadata only — there is no interpreter. Any other graph name is refused with `no_rust_implementation`. To make the happy path reach `completed`, the first built-in template is aligned to the registered strategy: id and name `sma_crossover`, graph `SMA 3 / SMA 8` on `TCS.NSE` daily (10 shares) — and because it is templates[0], it is also the Simulator's default selection. The other three templates, and any hand-authored graph, run only once `honba` grows a registered strategy of that name or a generic IR interpreter — recorded as open question 7.
 
 **Verification run:** `npm run test` **220/220** · `npm run lint` clean · `npm run typecheck` reports no error in any file of this change (a concurrent edit to `apps/algodesigner/canvas.tsx` outside this change was in flight at verification time and is untouched here) · `cargo test -p honba-api -p honba-api-rest` green · `cargo clippy -p honba-api -p honba-api-rest --all-targets -- -D warnings` clean · `cargo fmt --all` applied · `make codegen` regenerating schema/OpenAPI/Python/MCP/docs/FE-types without hand edits.
+
+---
+
+### 2026-10-17 — Phase 7 (FE)
+
+**Contract findings (bars + journal).** Two assumptions in the plan did not survive contact with the shipped contract:
+
+- **There is no timestamp-aligned local bar source.** `core/data-layer.ts` / `core/candle-generator.ts` carry `time` as **display strings** (their own timezone/format), not the `ts_event` epoch the journal uses, so they cannot anchor trade markers to candles. The only bars that share the run's clock are `GET /bars/{id}` (`id = SYMBOL.EXCHANGE`, `tf = bar_spec`, `from`/`to` = the run window). The FE therefore loads those, and when the store has none (or the API is down) falls back to a **deterministic NSE-session preview** reported as `source: 'preview'` and labelled in the UI — never passed off as served history.
+- **The journal is fills, not round trips.** `TradesResponse` = `Trade { costs, instrument_id, order_id, price, quantity, side, ts_event, ts_init }` — flat fills with **no PnL, no size-in/size-out, no signal price and no exit reason**. Everything a round trip reports is *derived* by one documented rule set (`core/simulator/trade-pairing.ts`, risk R6); "slippage vs signal" cannot be shown at all and is left blank rather than guessed (R5).
+
+**Phase 7 — interactive multi-pane chart & trade markers (FE).**
+- `core/simulator/chart-data.ts` — `unixNanosToSeconds` (whole seconds off the nanosecond **string**, no lossy `Number`), `toChartBars`, `parseBarSpec`/`barSpecSeconds`, `bucketStart`/`resampleBars` (IST-aware; **only buckets that contain a source bar are emitted**, so holidays/weekends/overnight gaps stay gaps — no phantom candles), `previewBars` (weekday-only NSE session, a pure function of each timestamp so overlapping windows agree bar-for-bar), `snapToBars`/`markerToleranceSec`.
+- `core/simulator/trade-pairing.ts` — fills→round trips by **position episode** (scale-in joins, scale-out consumes FIFO, exit legs aggregate, reversal through flat derives two trips); derived realised PnL net of allocated costs; already-open tail reported as `status: 'open'` / `exit_reason: 'open_at_end'`. `markersFromPairing` places an entry/exit marker per fill leg plus a clearly-`derived` open tail; `tripForMarker` feeds the tooltip.
+- `core/simulator/chart-series.ts` — graph node → `openalgo-charts` indicator spec (registry id + translated params + cycled colours), validated against the loaded registry; PSAR/`rma`/`parabolic_sar` have **no descriptor** and are returned `supported: false` with a reason, not silently dropped.
+- `core/simulator/journal.ts` + `core/simulator/bars.ts` — feature-detected, non-throwing fetch seams for `GET /backtests/{id}/journal` and `GET /bars/{id}`.
+- Store — a `journal` slice with `loadJournal`/`resetJournal`; `execute` clears it on start and auto-loads it when the run reaches `completed` (only if the client exposes the route and the run id is still current).
+- `apps/simulator/components/interactive-chart.tsx` — `InteractiveChart` (low-level `createChart` tier: candle series, `histogram` volume pane at `paneIndex: 1` with `priceFormat: { type: 'volume' }`, strategy studies via `addIndicator`, VWAP chrome, markers via `candles.createMarkers(() => candles.getData()).setMarkers(...)`, tooltips via `chart.subscribeClick(marker.id)` + `subscribeCrosshairMove`, `chart.destroy()` cleanup, theme subscription) and `SimulatorChart` (store-wired: `loadRunBars` → `chartSpecsFor(strategy)` → `pairTrades` + `markersFromPairing` + `snapToBars`). `apps/simulator-app.tsx` gains the chart above a scrolling `ResultsPanel`.
+- **Plan corrections recorded in §6:** graph-driven studies replace the fixed overlay/sub-pane menu (R7 — the chart shows the strategy's own indicators and parameters; volume + VWAP are chart chrome); pending/unfilled orders are **not** drawn because no run event stream and no order route exist (only the derived open-position tail is), and the absence is labelled.
+- Tests: `chart-data.test.ts` (19), `trade-pairing.test.ts` (16, incl. scale-in, scale-out, partial, reversal, and the acceptance case — journal fixtures snapped onto a real 5 m bar series land exactly on bar timestamps), `chart-series.test.ts` (11, incl. SMA `period`→registry `length` reconciliation), `journal.test.ts` (7), `bars.test.ts` (7), plus store tests for journal auto-load/degrade/reset.
+
+**Verification run:** `npm run typecheck` clean · `npm run test` **283/283** · `npm run lint` clean · `vite build` OK (`simulator-*.js` ~38 kB gzip 13.5 kB; the `openalgo-charts.indicators` tier and the shared `openalgo-charts` core are now in the Simulator's graph too).
+
+**Deferred / open (HB):** a run **event stream** (ADR 0021) would let pending/unfilled orders be drawn; a `signal_price`/`slippage` field on the journal (or an order route) would let the tooltip show slippage vs signal; the chart registry has no `psar`/`rma` descriptors.
+
+**Next:** Phase 8 (performance analytics, trade journal, heatmap & sweeps hand-off).
