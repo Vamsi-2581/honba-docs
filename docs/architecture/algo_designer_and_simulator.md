@@ -203,7 +203,7 @@ This correction is the basis of Phase 3 and is called out here so the rest of th
 ```
 
 1. **Debounce gate.** Editor keystrokes trigger a 300 ms debounce.
-2. **Recognition.** `POST /strategies/recognize` runs `graph_recognize` server-side and returns the recovered graph plus unrecognised line spans (`code_only`).
+2. **Recognition.** `POST /strategies/recognize` runs `graph_recognize` server-side and returns the recovered graph plus unrecognised line spans (`code_only`). *Implementation note (P3, FE):* the endpoint does not exist yet, so the FE ships a **client-side fast recogniser** (`core/designer/code-to-graph.ts`) that parses the generated builder subset — the "client-side fast AST parser" from the v1.0 note — behind a `Recognizer` seam. It is a pure function of `source`, so the remote recogniser can replace it without touching the sync pipeline, and it keeps `recognize(generate(g)).graph == g` honest for the generated subset (property-tested over the catalogue).
 3. **Graceful error immunity.** On a syntax error or an unrecognised span, Monaco marks the offending line and the canvas retains the last valid DAG with a status badge — it never flickers or clears.
 4. **Stabilisation.** Node IDs and existing `positions` are preserved across updates so nodes do not jump (already in `store.ts`).
 5. **Editor ↔ canvas navigation.** `graph_source_lines()` maps node IDs to generated-source lines for click-to-focus in both directions.
@@ -388,14 +388,14 @@ Repos are abbreviated: **FE** = `honba-frontend`, **HB** = `honba`, **STRAT** = 
 
 **Work items**
 
-- [ ] **HB:** add REST `POST /strategies/recognize` wrapping `graph_recognize.recognize()`; response `{ graph | null, spans: [{start_line, end_line, reason}], code_only: boolean }`; 422 with `reason=code_only` is **not** an error — it is a normal result.
-- [ ] **HB:** expose `graph_source_lines()` for node↔line mapping in the same response (or a sibling endpoint) so both navigation directions use one call.
-- [ ] **FE:** add `core/designer/code-to-graph.ts` — 300 ms debounced call, `AbortController` cancellation, in-flight coalescing.
-- [ ] **FE:** store slice: `sync` = `{ status: 'idle'|'pending'|'synced'|'invalid', lastGraph, spans }`; canvas keeps rendering `lastGraph` while `status==='invalid'`.
-- [ ] **FE:** apply returned graph via the existing `setGraph` path, preserving `positions` for IDs present in both graphs (already supported) and auto-placing new nodes via the existing layout helper.
-- [ ] **FE:** click a canvas node → editor scrolls/highlights its lines; click inside a generated `class` block → canvas selects the corresponding node.
-- [ ] **FE:** canvas header badge: `Graph synced (clean)` / `Pending valid syntax…` / `code_only spans present`.
-- [ ] **FE:** conflict policy: while the editor has focus and is dirty, editor wins; canvas edits during a pending recognition cancel the recognition.
+- [ ] **HB:** add REST `POST /strategies/recognize` wrapping `graph_recognize.recognize()`; response `{ graph | null, spans: [{start_line, end_line, reason}], code_only: boolean }`; 422 with `reason=code_only` is **not** an error — it is a normal result. *(Pending: `honba serve` is Rust-only and has no graph awareness, so this needs a Python-side or Rust-side recogniser; see §12.)*
+- [ ] **HB:** expose `graph_source_lines()` for node↔line mapping in the same response (or a sibling endpoint) so both navigation directions use one call. *(Pending; the FE maps ids→lines locally via `diagnostics.nodeLine` meanwhile.)*
+- [x] **FE:** add `core/designer/code-to-graph.ts` — 300 ms debounced call, `AbortController` cancellation, in-flight coalescing. *(Implemented as a client-side recogniser of the generated subset behind a `Recognizer` seam; a remote recogniser drops in unchanged.)*
+- [x] **FE:** store slice: `sync` = `{ status: 'idle'|'pending'|'synced'|'invalid', lastGraph, spans }`; canvas keeps rendering `lastGraph` while `status==='invalid'`. *(Slice name is `sync`; the retained graph is the store's `graph` itself, so nothing flickers.)*
+- [x] **FE:** apply returned graph via the existing `setGraph` path, preserving `positions` for IDs present in both graphs (already supported) and auto-placing new nodes via the existing layout helper.
+- [x] **FE:** click a canvas node → editor scrolls/highlights its lines; click inside a generated `class` block → canvas selects the corresponding node. *(Reverse direction resolves exact `.node(...)` declaration lines only.)*
+- [x] **FE:** canvas header badge: `Graph synced (clean)` / `Pending valid syntax…` / `code_only spans present`.
+- [x] **FE:** conflict policy: while the editor has focus and is dirty, editor wins; canvas edits during a pending recognition cancel the recognition. *(Enforced by a source-identity guard in `applyRecognition`; canvas edits regenerate code and reset the sync slice to a clean state.)*
 
 **Dependencies.** P2, P0 (recognize contract).
 
@@ -413,13 +413,13 @@ Repos are abbreviated: **FE** = `honba-frontend`, **HB** = `honba`, **STRAT** = 
 
 **Work items**
 
-- [ ] **HB:** expose the assistant over HTTP (or the existing gateway) — `POST /assistant/propose` wrapping `honba/ai/designer_assistant.py`; request carries graph, generated source, last run summary and the prompt; response is a typed `discussion | candidate | validation_error` payload with findings, decisions and a candidate graph. Route every candidate through the verifier before returning (ADR 0029 S5).
-- [ ] **FE:** `apps/algodesigner/ai-chat-column.tsx` — conversation list, prompt composer, chip accelerators (§5.4), streaming/typing indicator.
-- [ ] **FE:** replace `proposeAI` in `core/designer/store.ts` with a `client`-backed call; keep the stub behind a feature flag for offline/no-backend runs.
-- [ ] **FE:** **diff cards** — graph diff chips (`added_nodes`/`modified_nodes`/`removed_nodes`, already computed) plus a **unified code diff** rendered from `generateCode(candidate)` vs `generateCode(current)`.
-- [ ] **FE:** `Apply to Code` / `Apply to Canvas` (same action — graph is authoritative) via `snapshotVersion()` → `setGraph()`; `Discard`; both record an assistant message for audit.
-- [ ] **FE:** blocked cards render `BLOCKED` with findings and cannot invoke Run/Simulate.
-- [ ] **FE:** token/context budget: send graph (not full conversation), last N messages, and a truncated run summary.
+- [ ] **HB:** expose the assistant over HTTP (or the existing gateway) — `POST /assistant/propose` wrapping `honba/ai/designer_assistant.py`; request carries graph, generated source, last run summary and the prompt; response is a typed `discussion | candidate | validation_error` payload with findings, decisions and a candidate graph. Route every candidate through the verifier before returning (ADR 0029 S5). *(Pending: no Rust/HTTP surface for the Python assistant yet; see §12.)*
+- [x] **FE:** `apps/algodesigner/ai-chat-column.tsx` — conversation list, prompt composer, chip accelerators (§5.4), streaming/typing indicator.
+- [x] **FE:** replace `proposeAI` in `core/designer/store.ts` with a `client`-backed call; keep the stub behind a feature flag for offline/no-backend runs. *(Feature-detects `client.postAssistantPropose`; falls back to the local keyword engine when absent.)*
+- [x] **FE:** **diff cards** — graph diff chips (`added_nodes`/`modified_nodes`/`removed_nodes`, already computed) plus a **unified code diff** rendered from `generateCode(candidate)` vs `generateCode(current)`. *(LCS diff in `core/designer/code-diff.ts`; the card compares the candidate's stored source against the live code.)*
+- [x] **FE:** `Apply to Code` / `Apply to Canvas` (same action — graph is authoritative) via `snapshotVersion()` → `setGraph()`; `Discard`; both record an assistant message for audit.
+- [x] **FE:** blocked cards render `BLOCKED` with findings and cannot invoke Run/Simulate. *(`canApply()` plus a disabled Apply button; `toAssistantMessage` quarantines any candidate carrying findings.)*
+- [x] **FE:** token/context budget: send graph (not full conversation), last N messages, and a truncated run summary. *(`assistantContext()` trims to the last 6 turns; run summary is derived, never recomputed.)*
 
 **Dependencies.** P3 (diffing on stable graph), P0 (assistant contract).
 
@@ -680,8 +680,8 @@ A phase is complete only when its own acceptance criteria and the applicable gat
 ## 11. Open Questions & Pending Decisions
 
 1. **Editor choice** (P2): **resolved — Monaco**, wired to the bundled package (no CDN) with a textarea fallback; verified build produces a separate lazy chunk (`monaco-python-editor-*.js`, ~871 kB gzip) plus `editor.worker` and a lazy `python` language chunk. CodeMirror 6 remains the escape hatch if the P9 budget check fails.
-2. **Recognise endpoint shape** (P3): proposed combined response in §8.1 — confirm with the HB owner.
-3. **Assistant transport** (P4): dedicated REST route vs the MCP gateway (ADR 0009) — this plan assumes REST for symmetry with `verify`; proposed shape in §8.1.
+2. **Recognise endpoint shape** (P3): proposed combined response in §8.1 — confirm with the HB owner. Until then the FE uses the client-side selector; the response shape is consumed via `Recognizer`, so switching is additive.
+3. **Assistant transport** (P4): dedicated REST route vs the MCP gateway (ADR 0009) — this plan assumes REST for symmetry with `verify`; proposed shape in §8.1. Until then the FE feature-detects `client.postAssistantPropose` and falls back to the local engine.
 4. **Run-parameter coverage** (P6): commission/margin are not in the current request/`ExecutionConfig` (§8.2); add versioned fields rather than UI-side defaults.
 5. **Docs nav:** resolved — the document is listed under Architecture in `mkdocs.yml`.
 6. **Baseline metrics** (P9): whether `honba-strategies` should ship `backtest_result.json` for every catalogue entry to power Library previews. `registry.json` currently carries name/category/path/description/tags only; sufficient for a P5 list, but per-strategy default universe/params would improve previews.
@@ -722,3 +722,29 @@ A phase is complete only when its own acceptance criteria and the applicable gat
 **Verification run:** `npm run typecheck` clean · `npm run test` 125/125 · `npm run lint` clean · `vite build` OK.
 
 **Next:** Phase 3 (code → flow sync) requires the HB `POST /strategies/recognize` endpoint (§8.1); Phase 5 (library) is the parallelisable track.
+
+### 2026-10-17 — Phases 3 & 4 (FE)
+
+**Backend feasibility finding.** `honba serve` is Rust (`crates/honba-api-rest`) with no graph awareness — `StrategyGraph`, `graph_recognize` and `designer_assistant` are Python-only, and `POST /strategies/verify` compiles a `StrategyManifest` (Rust), not Python source. There is therefore no cheap path to a Rust `POST /strategies/recognize` or `POST /assistant/propose`: each needs either a Python HTTP surface or a Rust reimplementation. Both endpoint bullets stay open and are the gating HB work for P3/P4; the FE ships the full pipeline behind seams so the endpoints are drop-in.
+
+**Phase 3 — bidirectional code ↔ flow sync (FE).**
+- `core/designer/code-to-graph.ts` — client-side recogniser of the generated subset (marker + `GRAPH = (...)` builder chain), a minimal Python-literal parser, `findUnbalancedLine`, and `createSyncScheduler` (300 ms debounce, `AbortController` cancellation, in-flight coalescing, unchanged-source skip).
+- Store `sync` slice + `recognizer` seam: `requestSync` (debounced, wired from `setCode`), `syncNow` (immediate), `applyRecognition`, `setRecognizer`.
+- `applyRecognition` adopts a recognised graph **without regenerating code** (the editor is authoritative), preserves `positions` by id, auto-places new nodes, and drops stale results via a source-identity guard (canvas wins).
+- `regenerated()` helper resets the sync slice to a clean state on every canvas edit, so the badge and navigation stay truthful after graph-side changes.
+- Editor ↔ canvas navigation both ways: `CodeEditorPane`/`monaco-python-editor.tsx` gained `reveal` (canvas → editor `revealLineInCenter`) and `onLineClick` (editor → canvas via `diagnostics.nodeAtLine`).
+- Canvas header badge (`Graph synced (clean)` / `Pending valid syntax…` / `code_only spans present`) and combined verify + span markers in the editor.
+- Tests: `code-to-graph.test.ts` (round-trip over the frozen graph **and every catalogue indicator**, syntax-error/`code_only` spans, literal parser, debounce/coalesce/cancel/unchanged) and `store-sync.test.ts` (position stability, hold-last-valid, stale-drop, canvas-reset). `diagnostics.test.ts` extended with `nodeAtLine`.
+
+**Phase 4 — AI co-pilot column (FE).**
+- `core/designer/assistant.ts` — wire types mirroring §8.1, `ASSISTANT_PROMPTS`, `assistantContext` (last-N trim), `runSummary` (derived metrics), `toAssistantMessage` (quarantines `validation_error` **and** any candidate carrying findings), `canApply`, `hasAssistantPropose`.
+- `core/designer/code-diff.ts` — dependency-free LCS unified line diff (`unifiedLineDiff`, `diffStats`, `changedRows`).
+- `apps/algodesigner/ai-chat-column.tsx` — new column with chips, timeline, typing indicator, graph-diff chips, **unified code diff**, decisions, `BLOCKED` pill, Apply/Discard, audit messages. Replaces `AssistantPanel` (removed from `panels.tsx`).
+- Store: `proposeAI` feature-detects `client.postAssistantPropose` and otherwise uses the local engine; `assistantStatus` drives the typing indicator; `discardProposal` + an apply audit message.
+- Tests: `assistant.test.ts` (mapper/quarantine/context/run-summary/feature-detect) and `code-diff.test.ts`; `store-sync.test.ts` also covers the offline and backend co-pilot paths.
+
+**Verification run:** `npm run typecheck` clean · `npm run test` **159/159** · `npm run lint` clean · `vite build` OK (Monaco still isolated in `monaco-python-editor-*.js`, ~871 kB gzip; `algodesigner-*.js` ~105 kB gzip).
+
+**Deferred / open:** HB `POST /strategies/recognize` and `POST /assistant/propose`; `graph_source_lines` server-side (FE maps locally for now). Incremental refinement: the parser targets the generated subset (hand-written helper functions are reported as spans, not modelled) — the server-side recogniser remains the authority for arbitrary hand-written code.
+
+**Next:** Phase 5 (library, save & versioning) is the parallelisable FE track while the two HB endpoints are built; then P6 (simulator shell).
