@@ -437,14 +437,14 @@ Repos are abbreviated: **FE** = `honba-frontend`, **HB** = `honba`, **STRAT** = 
 
 **Work items**
 
-- [ ] **STRAT:** extend `registry.json` with any fields the Library needs (indicator families, default universe/params); keep category paths prefix-free per the repo convention.
-- [ ] **HB:** confirm `GET /strategies` returns enough per strategy (name, category, description, tags, path) — extend `CompiledStrategy` if not.
-- [ ] **FE:** `core/designer/library-store.ts` — fetch catalogue + user manifests, search/filter state, merge sources (registry, profile API, `localStorage`).
-- [ ] **FE:** `apps/algodesigner/library-drawer.tsx` — search, category filter (All/CTA/Multi-Factor), per-strategy `[Open] [Simulate]`, Custom section, indicator catalogue grouped by family.
-- [ ] **FE:** **Open** loads a strategy: set graph, regenerate code, reset editor/sync state.
-- [ ] **FE:** **Save flow** — `Ctrl+S`/Save builds a `SavedStrategyManifest`, writes `localStorage` + `putProfileLayoutsByName`/`putProfileModulesById`, appends a `DesignerVersion`; surface save state (saved/saving/error/offline).
-- [ ] **FE:** **Export** Python `.py`, JSON manifest; **Fork/Duplicate** creates a variant without touching the master.
-- [ ] **FE:** revision history UI — list `DesignerVersion` snapshots with hash + timestamp and one-click restore (backend already exists; expose in the drawer or a modal).
+- [ ] **STRAT:** extend `registry.json` with any fields the Library needs (indicator families, default universe/params); keep category paths prefix-free per the repo convention. *(Pending — and moot until HB surfaces the registry; see the finding below.)*
+- [x] **HB:** confirm `GET /strategies` returns enough per strategy (name, category, description, tags, path) — extend `CompiledStrategy` if not. **Finding (P5):** it does **not** and should not — `GET /strategies` returns the *session* catalogue of compiled strategies (`CompiledStrategy { id, ir }`), with no name/category/description/tags/path. The `honba-strategies/registry.json` is a separate source that HB does not currently expose. The FE therefore bundles a small template catalogue (`core/designer/strategy-templates.ts`) and treats registry fetch as a tracked HB gap.
+- [x] **FE:** `core/designer/library-store.ts` — fetch catalogue + user manifests, search/filter state, merge sources (registry, profile API, `localStorage`). *(`mergeLibrary`/`filterLibrary`/`presentCategories` + manifest model; localStorage is the primary store, the profile API is the best-effort cross-device write, and the strategy catalogue is bundled pending the registry route.)*
+- [x] **FE:** `apps/algodesigner/library-drawer.tsx` — search, category filter (All/CTA/Multi-Factor), per-strategy `[Open] [Simulate]`, Custom section, indicator catalogue grouped by family. *(Category filter is driven by the categories actually present — the §5.5 manifest categories — rather than the illustrative All/CTA/Multi-Factor labels.)*
+- [x] **FE:** **Open** loads a strategy: set graph, regenerate code, reset editor/sync state. *(`store.openStrategy` → `setGraph`, which regenerates code and resets the sync slice.)*
+- [x] **FE:** **Save flow** — `Ctrl+S`/Save builds a `SavedStrategyManifest`, writes `localStorage` + `putProfileLayoutsByName`/`putProfileModulesById`, appends a `DesignerVersion`; surface save state (saved/saving/error/offline). *(`store.saveStrategy`; uses `putProfileLayoutsByName` as the generic doc store since there is no dedicated manifest route; labels `Saved (offline)` when only localStorage succeeded.)*
+- [x] **FE:** **Export** Python `.py`, JSON manifest; **Fork/Duplicate** creates a variant without touching the master. *(JSON export already shipped in the canvas pane; `.py` export added to the top bar; `store.forkStrategy` clones under a fresh id.)*
+- [x] **FE:** revision history UI — list `DesignerVersion` snapshots with hash + timestamp and one-click restore (backend already exists; expose in the drawer or a modal). *(Already implemented as the canvas Versions modal; `saveStrategy` appends to the same snapshot list.)*
 
 **Dependencies.** P1 (drawer slot); P0 (registry/endpoint contracts).
 
@@ -748,3 +748,22 @@ A phase is complete only when its own acceptance criteria and the applicable gat
 **Deferred / open:** HB `POST /strategies/recognize` and `POST /assistant/propose`; `graph_source_lines` server-side (FE maps locally for now). Incremental refinement: the parser targets the generated subset (hand-written helper functions are reported as spans, not modelled) — the server-side recogniser remains the authority for arbitrary hand-written code.
 
 **Next:** Phase 5 (library, save & versioning) is the parallelisable FE track while the two HB endpoints are built; then P6 (simulator shell).
+
+### 2026-10-17 — Phase 5 (FE)
+
+**Finding (registry vs `GET /strategies`).** `GET /strategies` returns the *session* catalogue of compiled strategies (`CompiledStrategy { id, ir }`) — no name/category/description/tags/path — so it is not the `honba-strategies` registry the plan assumed. HB does not expose `registry.json`, so the FE bundles a small template catalogue and the registry fetch is a tracked HB gap.
+
+**Phase 5 — strategy & indicator library, save & versioning (FE).**
+- `core/designer/library-store.ts` — the §5.5 `SavedStrategyManifest`, `StrategyTemplate`, `LibraryEntry`, and pure helpers: `slugify`, `uniqueId`, `toSavedManifest` (id/`default_universe`/`default_params`), `upsertSaved`/`removeSaved`, `mergeLibrary`/`filterLibrary`/`presentCategories`, plus `loadSaved`/`persistSaved` over `localStorage` (best-effort, mirroring the layout slice).
+- `core/designer/strategy-templates.ts` — four built-in graphs (SMA cross, RSI mean-reversion, Donchian breakout, Bollinger reversion), each asserted valid and round-tripped through the Phase 3 recogniser.
+- Store slice: `savedStrategies`, `saveState`, `saveStrategy` (manifest → localStorage → best-effort `putProfileLayoutsByName` → revision snapshot; `saved`/`offline`/`error`), `openStrategy`, `forkStrategy` (fresh id/name, original untouched), `deleteSavedStrategy`, `exportPython`.
+- `apps/algodesigner/library-drawer.tsx` rewritten: Strategies section (built-in + custom) with search, category filter and per-row **Open / Simulate / Fork / Delete**, plus the indicator catalogue grouped by family.
+- Top bar: **Save** now runs the full save flow with a state label; **Export .py** added; `Ctrl+S` (canvas pane) routes to `saveStrategy`.
+- Revision history and JSON export/import already exist as canvas modals and are reused.
+- Tests: `library-store.test.ts` (manifest, persistence round-trip + corrupt tolerance, merge/filter, templates valid & recogniser round-trip) and `store-library.test.ts` (save/offline/error, fork isolation, delete, open reset, export).
+
+**Verification run:** `npm run typecheck` clean · `npm run test` **178/178** · `npm run lint` clean · `vite build` OK.
+
+**Deferred / open:** HB `registry.json` route for the full catalogue; dedicated profile-manifest route (currently `putProfileLayoutsByName` as a generic doc store); the two P3/P4 endpoints.
+
+**Next:** Phase 6 (simulator shell, controls & Designer hand-off).
