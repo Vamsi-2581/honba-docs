@@ -4,7 +4,7 @@
 files. Source of truth: `honba/crates/honba-api-rest` and ADR 0013.
 
 ```bash
-honba serve --data-dir ./bars                      # 127.0.0.1:8080
+honba serve --data-dir ./bars                      # 127.0.0.1:8000
 honba serve --data-dir ./bars --addr 127.0.0.1:0   # pick a free port
 ```
 
@@ -15,7 +15,7 @@ is `listening on http://<addr>` with the address actually bound.
 | Flag | Default | Meaning |
 |---|---|---|
 | `--data-dir` | required | Directory of Parquet bar files |
-| `--addr` | `127.0.0.1:8080` | Listen address |
+| `--addr` | `127.0.0.1:8000` | Listen address |
 | `--cors-origin <origin>` | none | Allow this browser origin (repeatable) |
 
 ## Security posture
