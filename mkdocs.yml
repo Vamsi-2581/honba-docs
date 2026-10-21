@@ -96,12 +96,17 @@ nav:
   - Architecture:
       - architecture/index.md
       - Overview: architecture/overview.md
-      - Algo Designer & Simulator (plan): architecture/algo_designer_and_simulator.md
-      - Using the Simulator: architecture/simulator_usage.md
-      - Adapter Interface: architecture/adapter_interface.md
-      - Money and Currency: architecture/money.md
+      - Domain-Driven Design (DDD): architecture/domain_driven_design.md
+      - Python-First Architecture: architecture/python_first.md
+      - Strategy Tester & Enhancer: architecture/strategy_tester_and_enhancer.md
+      - AI Engine & Quant Researcher: architecture/ai_engine.md
+      - Actor Runtime & Event Loop: architecture/event_loop.md
+      - Adapter Interface & Feeds: architecture/adapter_interface.md
+      - Money, Currency & Indian Costs: architecture/money.md
       - Order Reject and Cancel: architecture/order_reject_cancel.md
       - WASM Indicators: architecture/wasm_indicators.md
-      - Runtime (event loop): architecture/event_loop.md
       - Contracts from Rust: architecture/contracts_from_rust.md
-
+      - Algo Designer & Simulator (plan): architecture/algo_designer_and_simulator.md
+      - Using the Simulator: architecture/simulator_usage.md
+      - honba-kao Simulator Port: architecture/kao_simulator_port.md
+      - honba-kao Strategy Studio: architecture/strategy_studio.md

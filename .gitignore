@@ -1,17 +1,17 @@
-# Python
-.venv/
+
+book/build/
+.cache/
+.claude
+.DS_Store
+# Editors
+*.egg-info/
+.idea/
+# mdBook
+# MkDocs
 __pycache__/
 *.py[cod]
-*.egg-info/
-
-# MkDocs
+# Python
 site/
-.cache/
-
-# mdBook
-book/build/
-
-# Editors
+.venv
+.venv/
 .vscode/
-.idea/
-.DS_Store
