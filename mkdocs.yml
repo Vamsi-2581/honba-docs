@@ -110,3 +110,4 @@ nav:
       - Using the Simulator: architecture/simulator_usage.md
       - honba-kao Simulator Port: architecture/kao_simulator_port.md
       - honba-kao Strategy Studio: architecture/strategy_studio.md
+      - Risk Migration Plan: architecture/migration_plan_kokoro_risk_to_mon.md
