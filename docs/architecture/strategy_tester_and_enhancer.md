@@ -142,7 +142,38 @@ Once candidate parameters are selected, Honba's Monte Carlo engine simulates 10,
 
 ---
 
-## 5. AI-Native Automatic Strategy Enhancer Loop
+## 5. StockSharp Odysseus & Genetic Strategy Synthesis
+
+Inspired by **StockSharp Odysseus (`StockSharp.Algo.Analytics / Odysseus`)**, Honba incorporates automated genetic strategy synthesis and market regime analytics:
+
+### 5.1 AST-Based Rule Tree Synthesis (Odysseus Port)
+Rather than tuning a fixed set of scalar numbers, Odysseus generates and evolves an **Abstract Syntax Tree (AST)** of trading logic:
+* **Condition Nodes**: Relational comparisons between indicators (from the 100+ StockSharp catalog), threshold crossings (e.g. `RSI < 30`), and boolean gates (`AND`, `OR`, `NOT`).
+* **Action Nodes**: Order placements (`PlaceBuyLimit`, `PlaceSellMarket`, `ClosePosition`, `TrailingStop`).
+* **Sizing Nodes**: Fixed notional, Kelly fraction, or ATR-volatility normalized lot sizing.
+
+```mermaid
+graph TD
+    ROOT["Root Rule: Entry Logic"] --> COND["Condition: Logical AND"]
+    COND --> C1["Close > EMA(50)"]
+    COND --> C2["RSI(14) < 35"]
+    ROOT --> ACT["Action: PlaceBuy(RiskBracket)"]
+    ACT --> SL["StopLoss = Low - 2*ATR"]
+    ACT --> TP["TakeProfit = Entry + 3*ATR"]
+```
+
+### 5.2 Genetic Programming Operators
+* **Subtree Crossover**: Swaps logical branches between successful strategies.
+* **Point Mutation**: Mutates thresholds, comparison operators, or swaps indicators with equivalent types from the catalog.
+* **Multi-Objective Pareto Selection**: Selects candidates that dominate the multi-dimensional frontier across Sharpe, Sortino, Profit Factor, and Max Drawdown.
+
+### 5.3 Market Regime Clustering (StockSharp Analytics)
+* Integrates Hidden Markov Models (HMM) and KMeans clustering to classify market states into `TrendingBull`, `TrendingBear`, `HighVolatilityChop`, and `LowVolatilityMeanReverting`.
+* Dynamically activates regime-appropriate strategy subtrees.
+
+---
+
+## 6. AI-Native Automatic Strategy Enhancer Loop
 
 Beyond numerical hyperparameter tuning, Honba's AI Engine (`honba-nou`) provides an **autonomous qualitative strategy refinement loop**:
 

@@ -43,18 +43,22 @@ Compiled via `wasm-bindgen` with zero external runtime dependencies:
 
 ## 3. Supported Indicator Catalog
 
-### 3.1 Close-Based Indicators
-* **SMA / EMA**: Exponential and Simple Moving Averages.
-* **RSI**: Wilder-smoothed Relative Strength Index on range $[0, 100]$.
-* **MACD**: Moving Average Convergence Divergence (`macd`, `signal`, `histogram`).
-* **Bollinger Bands**: Moving average with configurable standard deviation multiplier $k$.
+### 3.1 Trend & Moving Averages (StockSharp Port)
+* **Moving Averages**: SMA, EMA, WMA, HMA (Hull), DEMA, TEMA, KAMA (Kaufman), ZLEMA, VWMA, ALMA (Arnaud Legoux), FRAMA (Fractal Adaptive), T3, McGinley Dynamic.
+* **Trend Followers**: Supertrend (dynamic ATR bands), Parabolic SAR (PSAR), Ichimoku Kinko Hyo (Cloud, Tenkan, Kijun, Senkou A/B, Chikou).
 
-### 3.2 Candle & Indian Microstructure Indicators
-* **Average True Range (ATR)**: Wilder true range for volatility normalization and stop-loss tagging.
-* **Supertrend**: Dynamic ATR trailing-stop trend indicator with direction flip tagging.
-* **Central Pivot Range (CPR)**: Indian intraday benchmark (Pivot, TC, BC) with virgin CPR test detection.
-* **Volume-Weighted Average Price (VWAP)**: Session-anchored intraday benchmark with standard deviation bands ($+1\sigma, +2\sigma, -1\sigma, -2\sigma$).
-* **Average Directional Index (ADX)**: Trend strength oscillator filtering rangebound sideways chop.
+### 3.2 Momentum & Oscillators (StockSharp Port)
+* **Oscillators**: RSI (Wilder), Stochastic (%K, %D, Slow/Fast), Stochastic RSI, MACD, ROC (Rate of Change), Momentum, CCI, Williams %R.
+* **Complex Oscillators**: Ultimate Oscillator, Awesome Oscillator (AO), Accelerator Oscillator (AC), CMO (Chande Momentum), DPO, Fisher Transform, QQE, TSI (True Strength Index).
+
+### 3.3 Volatility, Range & Channels (StockSharp Port)
+* **Channels**: Bollinger Bands (%B, Bandwidth), Keltner Channel, Donchian Channel (Highest High, Lowest Low).
+* **Volatility Metrics**: Average True Range (ATR), Standard Deviation, Historical Volatility (Parkinson, Garman-Klass, Yang-Zhang), Chaikin Volatility, Mass Index, Relative Volatility Index (RVI), Ulcer Index.
+
+### 3.4 Volume & Microstructure (StockSharp Port)
+* **Volume & Benchmarks**: On-Balance Volume (OBV), Volume Oscillator, Volume Rate of Change (VROC), Volume-Weighted Average Price (VWAP: session, weekly, monthly + bands), Accumulation/Distribution (A/D), Chaikin Money Flow (CMF), Money Flow Index (MFI).
+* **Order Book Depth**: Order Book Imbalance (bid/ask volume ratio), Weighted Mid-Price, Micro-Price, Spread (BPS), Liquidity Index.
+* **Candlestick Patterns & Stats**: Doji, Hammer, Engulfing, Morning/Evening Star; Linear Regression (Slope, Intercept, R2), Pearson Correlation, Covariance.
 
 ---
 
