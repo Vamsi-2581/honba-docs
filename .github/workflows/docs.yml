@@ -37,7 +37,7 @@ jobs:
 
       - uses: peaceiris/actions-mdbook@v2
         with:
-          mdbook-version: 'latest'
+          mdbook-version: '0.5.4'
 
       - name: mdbook build
         working-directory: honba-docs
